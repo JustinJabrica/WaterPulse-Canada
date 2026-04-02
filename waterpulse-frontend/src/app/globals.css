@@ -1,0 +1,76 @@
+@import "tailwindcss";
+
+/* ── Brand tokens ─────────────────────────────────── */
+:root {
+  --font-display: "DM Serif Display", Georgia, serif;
+  --font-body: "Plus Jakarta Sans", system-ui, sans-serif;
+  --wp-blue-deep: #1e6ba8;
+  --wp-blue-bright: #2196f3;
+  --wp-blue-light: #64b5f6;
+  --wp-blue-pale: #e3f2fd;
+}
+
+/* ── Base typography ──────────────────────────────── */
+body {
+  font-family: var(--font-body);
+}
+.font-display {
+  font-family: var(--font-display);
+}
+
+/* ── Keyframes ────────────────────────────────────── */
+@keyframes ripple {
+  0%, 100% { transform: translate(-50%, -50%) scale(0.9); opacity: 0.04; }
+  50%      { transform: translate(-50%, -50%) scale(1.1); opacity: 0.08; }
+}
+
+@keyframes wave-drift {
+  0%   { background-position-x: 0; }
+  100% { background-position-x: 200px; }
+}
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(24px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.6; }
+}
+
+/* ── Animation utilities ──────────────────────────── */
+.animate-fade-up           { animation: fade-up 0.8s ease-out both; }
+.animate-fade-up-delay-1   { animation-delay: 0.15s; }
+.animate-fade-up-delay-2   { animation-delay: 0.3s; }
+.animate-fade-up-delay-3   { animation-delay: 0.45s; }
+
+/* Modal slide-up entrance */
+@keyframes modal-enter {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-modal-enter { animation: modal-enter 0.2s ease-out both; }
+
+.wave-divider {
+  background: repeating-linear-gradient(
+    90deg,
+    transparent, transparent 40px,
+    rgba(33, 150, 243, 0.1) 40px, rgba(33, 150, 243, 0.1) 42px
+  );
+  animation: wave-drift 8s linear infinite;
+}
+
+/* ── Logo pulse dots ──────────────────────────────── */
+.pulse-dot          { animation: pulse-dot 2s ease-in-out infinite; }
+.animate-delay-500  { animation-delay: 0.5s; }
+.animate-delay-1000 { animation-delay: 1s; }
+
+/* ── Logo on dark backgrounds ─────────────────────── *
+ * Wrap the logo in .logo-on-dark to shift brand blues
+ * to lighter variants that stay legible on navy.       */
+.logo-on-dark .logo-text span:first-child { color: #90caf9 !important; }
+.logo-on-dark .logo-text span:last-child  { color: #e3f2fd !important; }
+.logo-on-dark .water-wave  { color: #64b5f6 !important; }
+.logo-on-dark .pulse-line  { stroke: #90caf9 !important; }
+.logo-on-dark .pulse-dot   { fill: #90caf9 !important; }
