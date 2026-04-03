@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import StationCard from "@/components/StationCard";
@@ -11,6 +11,12 @@ import { PROVINCES, STATION_TYPES } from "@/lib/constants";
 /* ─────────────────────────────────────────────
    Dashboard — Browse stations by province
    ───────────────────────────────────────────── */
+
+// Number of station cards to render per "page". The dashboard uses infinite
+// scroll — only PAGE_SIZE cards are shown initially. When the user scrolls
+// near the bottom, PAGE_SIZE more are appended automatically via an
+// IntersectionObserver watching a sentinel element below the grid.
+const PAGE_SIZE = 15;
 
 // ── Inline icons ────────────────────────────
 
@@ -68,6 +74,18 @@ export default function DashboardPage() {
   const [searchLoading, setSearchLoading] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(null);
 
+  // ── Infinite scroll state ──
+  // displayCount tracks how many cards from filteredStations to render.
+  // Starts at PAGE_SIZE (15) and grows by PAGE_SIZE each time the user
+  // scrolls near the bottom. Reset back to PAGE_SIZE whenever the province,
+  // filters, or search results change.
+  const [displayCount, setDisplayCount] = useState(PAGE_SIZE);
+
+  // Ref for the sentinel element placed below the station grid. An
+  // IntersectionObserver watches this element — when it enters the
+  // viewport (or comes within 200px), we load the next batch of cards.
+  const sentinelRef = useRef(null);
+
   // Track whether this is the first province load (to avoid clearing a restored search)
   const isFirstLoad = useRef(true);
 
@@ -76,8 +94,8 @@ export default function DashboardPage() {
     async function loadProvinces() {
       try {
         const data = await api.get("/api/stations/provinces");
-        // Sort by total_stations descending so the biggest provinces appear first
-        data.sort((a, b) => b.total_stations - a.total_stations);
+        // Sort alphabetically by province code
+        data.sort((a, b) => a.province_code.localeCompare(b.province_code));
         setProvinces(data);
         // Only auto-select if the store doesn't already have a province
         if (!selectedProvince && data.length > 0) {
@@ -121,18 +139,39 @@ export default function DashboardPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedProvince]);
 
-  // ── Auto-refresh every 5 minutes while page is visible ─
+  // Auto-refresh removed — the backend scheduler keeps data fresh.
+  // Users can still manually refresh via the refresh button.
+
+  // ── Infinite scroll: reset displayCount when inputs change ──
+  // Whenever the user switches province, changes a filter, or gets new
+  // search results, we reset back to showing the first PAGE_SIZE cards.
   useEffect(() => {
-    if (!selectedProvince) return;
+    setDisplayCount(PAGE_SIZE);
+  }, [selectedProvince, typeFilter, showNoData, searchResults]);
 
-    const interval = setInterval(() => {
-      if (document.visibilityState === "visible" && !refreshing) {
-        handleRefresh();
-      }
-    }, 5 * 60 * 1000);
+  // ── Infinite scroll: observe sentinel to load more cards ──
+  // An IntersectionObserver watches the sentinel div below the grid.
+  // rootMargin "200px" triggers 200px before the sentinel is visible,
+  // so new cards appear seamlessly before the user hits the bottom.
+  // Dependencies use the raw inputs (stations, searchResults, typeFilter,
+  // showNoData) rather than the derived filteredStations array, because
+  // filteredStations is computed further down in the component body.
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
 
-    return () => clearInterval(interval);
-  }, [selectedProvince, refreshing]);
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          setDisplayCount((prev) => prev + PAGE_SIZE);
+        }
+      },
+      { rootMargin: "200px" }
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [stations, searchResults, typeFilter, showNoData]);
 
   // ── Refresh readings for current province ─
   const handleRefresh = useCallback(async () => {
@@ -166,7 +205,7 @@ export default function DashboardPage() {
       setSearchLoading(true);
       try {
         const data = await api.get(
-          `/api/stations/search?q=${encodeURIComponent(searchQuery)}&province=${selectedProvince}&limit=50`
+          `/api/stations/search?q=${encodeURIComponent(searchQuery)}&province=${selectedProvince}&limit=200`
         );
         setSearchResults(data);
       } catch (error) {
@@ -179,25 +218,54 @@ export default function DashboardPage() {
     return () => clearTimeout(timeout);
   }, [searchQuery, selectedProvince]);
 
-  // ── Filter stations ────────────────────────
-  const displayStations = searchResults || stations;
-  const withDataFilter = showNoData
-    ? displayStations
-    : displayStations.filter((s) => s.latest_reading != null);
-  const filteredStations = typeFilter === "all"
-    ? withDataFilter
-    : withDataFilter.filter((s) => s.station_type === typeFilter);
-  const activeStations = displayStations.filter((s) => s.latest_reading != null);
-  const activeRiverCount = activeStations.filter((s) => s.station_type === "R").length;
-  const activeLakeCount = activeStations.filter((s) => s.station_type === "L").length;
-  const hiddenCount = displayStations.length - activeStations.length;
+  // ── Filter stations (memoized) ─────────────
+  // All derived station lists and counts are wrapped in useMemo so they
+  // only recalculate when their dependencies actually change, rather
+  // than on every render (typing, scrolling, any state change).
 
-  // ── Count by type for filter badges ───────
-  const typeCounts = {};
-  displayStations.forEach((s) => {
-    const t = s.station_type || "?";
-    typeCounts[t] = (typeCounts[t] || 0) + 1;
-  });
+  const displayStations = useMemo(
+    () => searchResults || stations,
+    [searchResults, stations]
+  );
+
+  const filteredStations = useMemo(() => {
+    const withDataFilter = showNoData
+      ? displayStations
+      : displayStations.filter((s) => s.latest_reading != null);
+    return typeFilter === "all"
+      ? withDataFilter
+      : withDataFilter.filter((s) => s.station_type === typeFilter);
+  }, [displayStations, showNoData, typeFilter]);
+
+  // Station counts derived from displayStations — only recalculated
+  // when the base station list changes (province switch or search).
+  const { activeRiverCount, activeLakeCount, hiddenCount } = useMemo(() => {
+    const active = displayStations.filter((s) => s.latest_reading != null);
+    return {
+      activeRiverCount: active.filter((s) => s.station_type === "R").length,
+      activeLakeCount: active.filter((s) => s.station_type === "L").length,
+      hiddenCount: displayStations.length - active.length,
+    };
+  }, [displayStations]);
+
+  // Counts used by the "Showing X active of Y total" counter —
+  // depends on the current filters applied to the station list.
+  const { totalForType, activeFilteredCount } = useMemo(() => ({
+    totalForType: typeFilter === "all"
+      ? displayStations.length
+      : displayStations.filter((s) => s.station_type === typeFilter).length,
+    activeFilteredCount: filteredStations.filter((s) => s.latest_reading != null).length,
+  }), [displayStations, filteredStations, typeFilter]);
+
+  // Type badge counts — only recalculated when base station list changes.
+  const typeCounts = useMemo(() => {
+    const counts = {};
+    displayStations.forEach((s) => {
+      const t = s.station_type || "?";
+      counts[t] = (counts[t] || 0) + 1;
+    });
+    return counts;
+  }, [displayStations]);
 
   const provinceName = PROVINCES[selectedProvince] || selectedProvince;
 
@@ -310,11 +378,11 @@ export default function DashboardPage() {
               )}
             </button>
 
-            {/* Refresh button */}
+            {/* Refresh button — pushed to the right so it aligns above "Last updated" */}
             <button
               onClick={handleRefresh}
               disabled={refreshing}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-medium bg-white border border-slate-200 text-slate-900 hover:text-[#1e6ba8] hover:border-[#2196f3]/40 disabled:opacity-50 transition-all"
+              className="ml-auto inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-medium bg-white border border-slate-200 text-slate-900 hover:text-[#1e6ba8] hover:border-[#2196f3]/40 disabled:opacity-50 transition-all"
             >
               {refreshing ? (
                 <IconLoader className="w-3.5 h-3.5" />
@@ -373,14 +441,48 @@ export default function DashboardPage() {
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {filteredStations.map((station) => (
-                <StationCard
-                  key={station.station_number}
-                  station={station}
-                />
-              ))}
-            </div>
+            <>
+              {/* ── Station count summary ──
+                   When showNoData is on (inactive stations visible), shows
+                   "Showing all Y stations." When off, shows how many active
+                   stations exist out of the total for the current filters. */}
+              <p className="text-xs text-slate-500 mb-3">
+                {showNoData
+                  ? `Showing all ${filteredStations.length} station${filteredStations.length !== 1 ? "s" : ""}.`
+                  : `Showing ${activeFilteredCount} active station${activeFilteredCount !== 1 ? "s" : ""} of ${totalForType} total.`}
+              </p>
+
+              {/* ── Station card grid ──
+                   Only render the first `displayCount` cards (controlled by
+                   infinite scroll). slice(0, displayCount) is safe when
+                   displayCount exceeds the array length — it just returns all. */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {filteredStations.slice(0, displayCount).map((station) => (
+                  <StationCard
+                    key={station.station_number}
+                    station={station}
+                  />
+                ))}
+              </div>
+
+              {/* ── Infinite scroll sentinel ──
+                   This invisible div sits below the grid. An IntersectionObserver
+                   (set up in the useEffect above) watches it — when the user
+                   scrolls within 200px of it, displayCount increments by PAGE_SIZE
+                   and the next batch of cards renders. Hidden once all cards are
+                   visible so the observer stops firing. */}
+              {displayCount < filteredStations.length && (
+                <div
+                  ref={sentinelRef}
+                  className="flex items-center justify-center py-8"
+                >
+                  <IconLoader className="w-5 h-5 text-[#2196f3]" />
+                  <span className="ml-2 text-sm text-slate-500">
+                    Loading more stations...
+                  </span>
+                </div>
+              )}
+            </>
           )}
         </div>
       </main>

@@ -34,6 +34,7 @@ logger = logging.getLogger(__name__)
 CURRENT_VARIABLES = [
     "temperature_2m",
     "apparent_temperature",
+    "relative_humidity_2m",
     "precipitation",
     "weather_code",
     "visibility",
@@ -118,6 +119,7 @@ def build_current_weather(current_data: dict, daily_data: dict | None = None) ->
     return {
         "temperature_c": current_data.get("temperature_2m"),
         "apparent_temperature_c": current_data.get("apparent_temperature"),
+        "humidity_pct": current_data.get("relative_humidity_2m"),
         "precipitation_mm": current_data.get("precipitation"),
         "weather_code": weather_code,
         "weather_description": WMO_CODES.get(weather_code, "Unknown"),

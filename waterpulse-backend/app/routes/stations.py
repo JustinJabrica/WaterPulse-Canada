@@ -96,13 +96,19 @@ async def list_basins(db: AsyncSession = Depends(get_db)):
 @router.get("/provinces", response_model=list[ProvinceInfo])
 async def list_provinces(db: AsyncSession = Depends(get_db)):
     """List all provinces with station counts and type breakdown."""
+    # Only count River (R) and Lake/Reservoir (L) stations — meteorological
+    # stations are excluded because the dashboard's by-province endpoint
+    # only returns R and L types, so the counts here must match.
     result = await db.execute(
         select(
             Station.province,
             Station.station_type,
             func.count().label("count"),
         )
-        .where(Station.province.isnot(None))
+        .where(
+            Station.province.isnot(None),
+            Station.station_type.in_(["R", "L"]),
+        )
         .group_by(Station.province, Station.station_type)
     )
     rows = result.all()
@@ -138,7 +144,7 @@ async def list_provinces(db: AsyncSession = Depends(get_db)):
 async def search_stations(
     q: str = Query(..., min_length=2, description="Search term for station name"),
     province: str | None = Query(None, description="Filter by province code (e.g., AB, BC, ON)"),
-    limit: int = Query(25, ge=1, le=100, description="Maximum results to return"),
+    limit: int = Query(100, ge=1, le=500, description="Maximum results to return"),
     db: AsyncSession = Depends(get_db),
 ):
     """Search stations by name (case-insensitive partial match).
@@ -147,9 +153,17 @@ async def search_stations(
     results display flow, level, and capacity data on the cards.
     Optionally scoped to a single province.
     """
+    # Only search River (R) and Lake/Reservoir (L) stations — meteorological
+    # stations are excluded from all dashboard and readings endpoints.
+    # selectinload eagerly fetches the related current_readings in a single
+    # batch query instead of one query per station (avoids N+1).
     query = (
         select(Station)
-        .where(Station.station_name.ilike(f"%{q}%"))
+        .where(
+            Station.station_name.ilike(f"%{q}%"),
+            Station.station_type.in_(["R", "L"]),
+        )
+        .options(selectinload(Station.current_readings))
     )
     if province:
         query = query.where(Station.province == province.upper())
@@ -157,34 +171,25 @@ async def search_stations(
     result = await db.execute(query)
     stations = result.scalars().all()
 
-    # Pair each station with its latest reading
-    results = []
-    for station in stations:
-        reading_result = await db.execute(
-            select(CurrentReading)
-            .where(CurrentReading.station_number == station.station_number)
-            .order_by(CurrentReading.fetched_at.desc())
-            .limit(1)
+    # Build response — readings already loaded via selectinload
+    return [
+        StationWithReading(
+            station_number=station.station_number,
+            station_name=station.station_name,
+            latitude=station.latitude,
+            longitude=station.longitude,
+            province=station.province,
+            station_type=station.station_type,
+            data_type=station.data_type,
+            data_source=station.data_source,
+            basin_number=station.basin_number,
+            catchment_number=station.catchment_number,
+            drainage_basin_prefix=station.drainage_basin_prefix,
+            has_capacity=station.has_capacity or False,
+            latest_reading=station.current_readings[0] if station.current_readings else None,
         )
-        reading = reading_result.scalar_one_or_none()
-        results.append(
-            StationWithReading(
-                station_number=station.station_number,
-                station_name=station.station_name,
-                latitude=station.latitude,
-                longitude=station.longitude,
-                province=station.province,
-                station_type=station.station_type,
-                data_type=station.data_type,
-                data_source=station.data_source,
-                basin_number=station.basin_number,
-                catchment_number=station.catchment_number,
-                drainage_basin_prefix=station.drainage_basin_prefix,
-                has_capacity=station.has_capacity or False,
-                latest_reading=reading,
-            )
-        )
-    return results
+        for station in stations
+    ]
 
 
 @router.get("/nearby", response_model=list[StationSummary])

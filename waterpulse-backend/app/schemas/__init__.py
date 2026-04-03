@@ -141,7 +141,6 @@ class CurrentReadingResponse(BaseModel):
     flow_percentiles: PercentileData | None = None
     level_percentiles: PercentileData | None = None
 
-    weather: WeatherData | None = None
     extra: dict | None = None
 
     model_config = {"from_attributes": True}

@@ -135,6 +135,24 @@ curl http://localhost:8000/api/admin/status
 
 Returns station counts by province and source, reading counts, last updated timestamp, and historical data statistics.
 
+### Getting Started with Docker (Alternative)
+
+If you prefer Docker over local setup, you can skip steps 1-4 above:
+
+1. **Copy the environment template** at the repo root:
+   ```bash
+   cp .env.example .env
+   ```
+2. **Fill in secrets** — at minimum, set `POSTGRES_PASSWORD` and `SECRET_KEY` in `.env`
+3. **Start all services** from the repo root:
+   ```bash
+   docker-compose up --build
+   ```
+   This starts PostgreSQL, runs Alembic migrations automatically, and launches the backend on port 8000.
+4. **Sync stations and data** — same as steps 4-5 above (use curl or the docs UI at http://localhost:8000/docs)
+
+> In Docker, the backend source code is bind-mounted, so code changes are picked up automatically via uvicorn's `--reload` flag. You do not need to restart the container after editing Python files.
+
 ---
 
 ## Technology Stack
@@ -150,7 +168,7 @@ Returns station counts by province and source, reading counts, last updated time
 | **psycopg2** | PostgreSQL driver for synchronous Python. Used only by Alembic for migrations (Alembic doesn't support async). | Referenced in `DATABASE_URL_SYNC` |
 | **Alembic** | Database migration tool. Tracks schema changes (add/remove/rename columns) and applies them incrementally. Works with SQLAlchemy models. | `alembic/` directory |
 | **httpx** | Async HTTP client library (similar to `requests` but supports `async`/`await`). Used to call external APIs (ECCC, Alberta, Open-Meteo). | All provider files, `weather.py` |
-| **APScheduler** | Background task scheduler. Runs the readings refresh every 5 minutes without needing a separate process like Celery. | `scheduler.py` |
+| **APScheduler** | Background task scheduler. Runs readings refresh every 10 minutes and historical sync annually on Jan 1st, without needing a separate process like Celery. | `scheduler.py` |
 | **python-jose** | JWT (JSON Web Token) library for creating and verifying authentication tokens. | `auth.py` |
 | **bcrypt** | Password hashing library. Securely stores passwords so even if the database is compromised, passwords can't be read. | `auth.py` |
 | **uvicorn** | ASGI server that actually runs the FastAPI application. It's what listens on port 8000 and passes HTTP requests to FastAPI. | Command line |
@@ -276,7 +294,7 @@ async def lifespan(app: FastAPI):
     # STARTUP — runs once when the server starts
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)  # Create tables if they don't exist
-    start_scheduler()                                    # Start the 5-minute refresh cycle
+    start_scheduler()                                    # Start scheduled jobs (readings + historical)
 
     yield  # <-- the app runs here, handling requests
 
@@ -299,7 +317,7 @@ waterpulse-backend/
 │   ├── config.py                # All configuration (loaded from .env)
 │   ├── database.py              # Database engine, session factory, Base class
 │   ├── auth.py                  # JWT, password hashing, cookie management
-│   ├── scheduler.py             # APScheduler for periodic readings refresh
+│   ├── scheduler.py             # APScheduler (readings every 10 min, historical Jan 1st)
 │   │
 │   ├── models/                  # SQLAlchemy models (one class = one table)
 │   │   ├── __init__.py          # Re-exports all models
@@ -408,7 +426,7 @@ These point to the **same database** but use different drivers:
 | `ALBERTA_BASE_URL` | No | `https://rivers.alberta.ca` | Alberta provincial API base |
 | `OPEN_METEO_FORECAST_URL` | No | `https://api.open-meteo.com/v1/forecast` | Weather API |
 | `OPEN_METEO_AQI_URL` | No | `https://air-quality-api.open-meteo.com/v1/air-quality` | Air quality API |
-| `READINGS_REFRESH_INTERVAL_MINUTES` | No | `5` | Auto-refresh frequency |
+| `READINGS_REFRESH_INTERVAL_MINUTES` | No | `10` | Auto-refresh frequency |
 | `WEATHER_CACHE_TTL_MINUTES` | No | `30` | How long cached weather is considered fresh before re-fetching |
 | `WEATHER_BATCH_SIZE` | No | `40` | Max coordinates per Open-Meteo request |
 | `WEATHER_BATCH_DELAY` | No | `1.5` | Seconds to wait between weather batches (rate limit protection) |
@@ -870,8 +888,8 @@ There are three orchestrators:
 | File | What It Does | How Often |
 |---|---|---|
 | `station_sync.py` | Merges station metadata from all providers, upserts to DB | Twice per year or on demand |
-| `readings_refresh.py` | Merges readings, computes percentile ratings, upserts to `current_readings` table | Every 5 minutes |
-| `historical_sync.py` | Fetches daily means per station, upserts to `historical_daily_means` table | Quarterly or on demand |
+| `readings_refresh.py` | Merges readings, computes percentile ratings, upserts to `current_readings` table | Every 10 minutes |
+| `historical_sync.py` | Fetches daily means per station, upserts to `historical_daily_means` table | Annually (Jan 1st) or on demand |
 
 ### Merge Strategy (Alberta Priority)
 
@@ -1018,7 +1036,7 @@ results = await asyncio.gather(*tasks, return_exceptions=True)
 - ECCC fills in: status (Active/Discontinued), drainage_area_gross, contributor, vertical_datum, rhbn
 - `data_source` is set to `"both"`
 
-### Readings Refresh (Every 5 Minutes)
+### Readings Refresh (Every 10 Minutes)
 
 ```
 1. Alberta provider POSTs to ~466 water stations, gets ~394 readings
@@ -1114,23 +1132,33 @@ Most endpoints work without authentication. The `get_current_user` dependency re
 
 ## Background Scheduling
 
-APScheduler runs the readings refresh automatically:
+APScheduler runs two background jobs:
 
 ```python
-# scheduler.py
+# scheduler.py — readings refresh (every 10 minutes)
 scheduler.add_job(
-    scheduled_readings_refresh,
+    _run_readings_refresh,
     trigger=IntervalTrigger(minutes=settings.READINGS_REFRESH_INTERVAL_MINUTES),
     id="readings_refresh",
-    max_instances=1,  # Prevents overlap if a refresh takes longer than 5 minutes
+    max_instances=1,  # Prevents overlap if a refresh takes longer than 10 minutes
+)
+
+# scheduler.py — historical sync (January 1st at 03:00 UTC)
+scheduler.add_job(
+    _run_historical_sync,
+    trigger=CronTrigger(month=1, day=1, hour=3, minute=0),
+    id="historical_sync",
+    max_instances=1,
 )
 ```
 
 The scheduler starts when the FastAPI app starts (in the `lifespan` function) and stops when the app shuts down.
 
-`max_instances=1` is important — if a refresh takes 6 minutes, the scheduler won't start another one concurrently. It waits for the current one to finish, then runs the next one.
+`max_instances=1` is important — if a job takes longer than expected, the scheduler won't start another instance concurrently. It waits for the current one to finish, then runs the next one.
 
-Station sync and historical sync are NOT scheduled — they're triggered manually via admin endpoints because they're infrequent and long-running.
+Each job creates its own database session (not tied to any HTTP request) and catches all exceptions so a failed run doesn't kill the scheduler.
+
+Station sync is NOT scheduled — it's triggered manually via the admin endpoint because it's infrequent (twice per year) and the station list rarely changes. Historical sync and readings refresh can also be triggered manually via admin endpoints in addition to their scheduled runs.
 
 ---
 
@@ -1141,9 +1169,9 @@ Station sync and historical sync are NOT scheduled — they're triggered manuall
 | Method | Path | Description |
 |---|---|---|
 | GET | `/api/stations/` | List all stations (filterable by `station_type`, `basin`, `catchment`, `province`) |
-| GET | `/api/stations/provinces` | List all provinces with station counts and R/L/M breakdown |
+| GET | `/api/stations/provinces` | List all provinces with R/L station counts (meteorological excluded) |
 | GET | `/api/stations/basins` | List Alberta basins with station groups and counts |
-| GET | `/api/stations/search?q=bow+river&province=AB` | Search stations by name (case-insensitive partial match, optional `province` filter, configurable `limit`) |
+| GET | `/api/stations/search?q=bow+river&province=AB` | Search R/L stations by name (case-insensitive partial match, optional `province` filter, default limit 100) |
 | GET | `/api/stations/nearby?lat=X&lon=Y&radius=50` | Find stations within a radius in kilometres (configurable `radius` and `limit`) |
 | GET | `/api/stations/{station_number}` | Full detail for one station |
 | GET | `/api/stations/{station_number}/current` | Station with its latest reading and rating |
@@ -1182,8 +1210,8 @@ Station sync and historical sync are NOT scheduled — they're triggered manuall
 | Method | Path | Description | Frequency |
 |---|---|---|---|
 | POST | `/api/admin/sync-stations` | Run station sync across all providers | Twice per year or on demand |
-| POST | `/api/admin/sync-historical` | Run historical sync (can take hours for all of Canada) | Quarterly or on demand |
-| POST | `/api/admin/refresh-readings` | Manual readings refresh | On demand (auto every 5 min) |
+| POST | `/api/admin/sync-historical` | Run historical sync (can take hours for all of Canada) | Annually (Jan 1st auto) or on demand |
+| POST | `/api/admin/refresh-readings` | Manual readings refresh | On demand (auto every 10 min) |
 | GET | `/api/admin/status` | Station counts by province/source, reading counts, historical stats | Any time |
 
 ---
@@ -1310,7 +1338,6 @@ Latest readings with ratings and source tracking.
 | `pct_full` | Float | Reservoir percent full (nullable) |
 | `flow_rating`, `level_rating`, `pct_full_rating` | String | Computed rating labels |
 | `flow_percentiles`, `level_percentiles` | JSON | P10/P25/P50/P75/P90 thresholds |
-| `weather` | JSON | Deprecated — no longer populated. Weather is now in the `station_weather` table. |
 | `extra` | JSON | Provider-specific data (precipitation totals, etc.) |
 
 ### `station_weather`
@@ -1582,9 +1609,9 @@ These stub records get enriched on the next station sync when the provider fetch
 
 ### Weather Is Now On-Demand (Not in Bulk Refresh)
 
-Weather used to be fetched for every station during the 5-minute readings refresh, which added 15-30 seconds to each cycle. Now weather is fetched on demand per station via `GET /api/stations/{station_number}/weather` and cached for 30 minutes in the `station_weather` table. This made the readings refresh significantly faster (3 phases instead of 4) and eliminated unnecessary Open-Meteo calls for stations nobody is viewing.
+Weather used to be fetched for every station during the 10-minute readings refresh, which added 15-30 seconds to each cycle. Now weather is fetched on demand per station via `GET /api/stations/{station_number}/weather` and cached for 30 minutes in the `station_weather` table. This made the readings refresh significantly faster (3 phases instead of 4) and eliminated unnecessary Open-Meteo calls for stations nobody is viewing.
 
-The `weather` JSON column on `current_readings` still exists but is deprecated and no longer populated. The frontend should read weather from the dedicated weather endpoint instead.
+The `weather` JSON column has been removed from `current_readings` (migration 0002). Weather data is served exclusively from the `station_weather` table via the dedicated weather endpoint.
 
 ### Historical Sync Is a Long Job
 
@@ -1753,6 +1780,71 @@ alembic revision --autogenerate -m "Describe what changed"
 # 4. Apply it
 alembic upgrade head
 ```
+
+---
+
+## Docker
+
+### Dockerfile
+
+The backend Dockerfile (`waterpulse-backend/Dockerfile`) uses Python 3.12-slim (Debian-based, not Alpine) because the `asyncpg` and `psycopg2-binary` packages include C extensions that compile more reliably on Debian.
+
+**Layer caching strategy:** `requirements.txt` is copied and installed before the source code. This means changing a Python file does NOT re-trigger `pip install` — only changes to `requirements.txt` invalidate the dependency layer, making rebuilds fast.
+
+### entrypoint.sh
+
+The entrypoint script runs every time the backend container starts:
+
+1. **Wait for PostgreSQL** — uses `psycopg2` with individual connection params (`host='db'`, `password` from `POSTGRES_PASSWORD` env var) to verify the database accepts queries. Retries every 2 seconds for up to 30 attempts. We use individual params instead of `DATABASE_URL_SYNC` because the SQLAlchemy dialect prefix (`postgresql+psycopg2://`) is not valid for raw psycopg2.
+2. **Run Alembic migrations** — `alembic upgrade head` brings the schema to the latest version. If this fails, the container stops (the API will not start with an outdated schema).
+3. **Start uvicorn** — serves the FastAPI app on `0.0.0.0:8000`. Extra arguments from docker-compose `command` (e.g., `--reload`) are passed through.
+
+> **Windows users:** This file must use LF line endings, not CRLF. The `.gitattributes` rule `*.sh text eol=lf` handles this automatically.
+
+### Environment Variables in Docker
+
+| Variable | Set Where | Notes |
+|----------|-----------|-------|
+| `DATABASE_URL` | `docker-compose.yml` | Uses Docker service name `db` as hostname — only works inside Docker network |
+| `DATABASE_URL_SYNC` | `docker-compose.yml` | Same, but sync driver for Alembic |
+| `POSTGRES_PASSWORD` | `.env` | Shared by the `db` and `backend` containers |
+| `SECRET_KEY`, API URLs, etc. | `.env` | Loaded via `env_file` directive in docker-compose |
+
+> **Important:** The backend's pydantic-settings configuration reads all required environment variables at import time (when the Python process starts). If any required variable is missing, the container crashes immediately with a pydantic validation error. Check `docker-compose logs backend` if the container exits on startup.
+
+### Alembic in Docker
+
+Migrations run automatically on container start. For manual operations:
+
+```bash
+# Apply all pending migrations
+docker-compose exec backend alembic upgrade head
+
+# Create a new migration from model changes
+docker-compose exec backend alembic revision --autogenerate -m "description of change"
+
+# Check current migration state
+docker-compose exec backend alembic current
+```
+
+### Connecting to the Database
+
+Port 5432 is exposed in the development docker-compose for local tools (pgAdmin, DBeaver, etc.):
+
+```bash
+# Open a psql shell inside the container
+docker-compose exec db psql -U waterpulse -d waterpulse
+
+# Or connect from your host machine
+psql -h localhost -p 5432 -U waterpulse -d waterpulse
+```
+
+### .dockerignore
+
+The `.dockerignore` file excludes `__pycache__/`, `.venv/`, `.env` files, and test artifacts from the Docker build context. This:
+- Prevents secrets (`.env`) from being copied into the Docker image
+- Keeps the build context small and builds fast (the `.venv/` alone can be 200+ MB)
+- Avoids stale bytecode (`__pycache__/`) interfering with the container's Python runtime
 
 ---
 

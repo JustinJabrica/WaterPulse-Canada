@@ -157,16 +157,8 @@ export default function StationDetail({ stationNumber, onClose, refreshButton = 
     }
   }, [station?.latitude, station?.longitude, loadWeather]);
 
-  // ── Auto-refresh every 5 minutes while visible ─
-  useEffect(() => {
-    const interval = setInterval(() => {
-      if (document.visibilityState === "visible" && !refreshing) {
-        handleRefresh();
-      }
-    }, 5 * 60 * 1000);
-
-    return () => clearInterval(interval);
-  }, [stationNumber, refreshing]);
+  // Auto-refresh removed — the backend scheduler keeps data fresh.
+  // Users can still manually refresh via the refresh button.
 
   // ── Refresh this station's reading ────────
   const handleRefresh = async () => {
@@ -403,6 +395,16 @@ export default function StationDetail({ stationNumber, onClose, refreshButton = 
                 {weatherDesc && (
                   <span>{weatherDesc}</span>
                 )}
+                {current.sunrise && (
+                  <span>
+                    Sunrise: {new Date(current.sunrise).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+                  </span>
+                )}
+                {current.sunset && (
+                  <span>
+                    Sunset: {new Date(current.sunset).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+                  </span>
+                )}                
                 {current.humidity_pct != null && (
                   <span>Humidity: {current.humidity_pct.toFixed(0)}%</span>
                 )}

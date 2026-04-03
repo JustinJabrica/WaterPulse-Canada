@@ -1,0 +1,46 @@
+# =============================================================================
+# WaterPulse Backend — Docker Ignore
+# =============================================================================
+# Files and directories excluded from the Docker build context.
+# This keeps the build fast and the image clean by preventing large or
+# sensitive files from being sent to the Docker daemon during "docker build".
+#
+# Without this file, Docker would copy the entire directory (including the
+# ~200 MB .venv, cached bytecode, and .env secrets) into the build context.
+# =============================================================================
+
+# ── Python virtual environments and cache ─────
+# These are recreated inside the container by pip install.
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+
+# ── Environment files with secrets ────────────
+# NEVER include real .env files in the Docker image.
+# The .env.example template is safe (only placeholders).
+.env
+.env.*
+!.env.example
+
+# ── Version control ───────────────────────────
+.git/
+.gitignore
+
+# ── Python tooling cache ─────────────────────
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+htmlcov/
+
+# ── Test files in the backend root ────────────
+# These are development-only scripts, not part of the application.
+test_*.py
+test_*.json
+*_results.json
+
+# ── Documentation (not needed at runtime) ─────
+README.md
+CLAUDE.md

@@ -43,13 +43,23 @@ Uses **Zustand** for state that must survive page navigations. Stores live in `s
 - `dashboardStore.js` — selected province, search query, type filter, `showNoData` toggle (show/hide stations without current data, default false). Persists in-memory so navigating to a station detail and back restores the dashboard exactly.
 - Guests get temporary state (resets on tab close). Logged-in persistence via cookie-based Zustand `persist` middleware is planned but not yet built.
 
+## Infinite Scroll (Dashboard)
+
+The dashboard uses frontend-only infinite scroll to avoid rendering hundreds of station cards at once. All station data is fetched upfront from the API (per-province datasets are small enough), but only `PAGE_SIZE` (15) cards are rendered initially. As the user scrolls near the bottom, 15 more are appended automatically.
+
+- **Mechanism**: An `IntersectionObserver` watches a sentinel `<div>` placed below the station grid. When the sentinel enters the viewport (or comes within 200px via `rootMargin`), `displayCount` state increments by `PAGE_SIZE`.
+- **Rendering**: `filteredStations.slice(0, displayCount).map(...)` controls how many cards appear.
+- **Reset**: `displayCount` resets to `PAGE_SIZE` whenever the province, type filter, `showNoData` toggle, or search results change.
+- **Sentinel**: Hidden once `displayCount >= filteredStations.length` (all cards visible). Shows a loading spinner while more cards are available.
+- **Counter**: A "Showing X of Y stations" label appears above the grid when the total exceeds `PAGE_SIZE`.
+
 ## Pages
 
 | Route | Status | Key features |
 |-------|--------|-------------|
 | `/` | Built | Landing page, live stats from API, CTA |
-| `/dashboard` | Built | Province picker, station cards with rating pills + capacity bars, province-scoped search (debounced), station type filter, show inactive stations toggle, auto-refresh every 5 min |
-| `/station/[station_number]` | Built | Full readings (flow/level/elevation), percentile bars, capacity bar for reservoirs, weather card (temp/wind+Beaufort/AQI/UV), 7-day forecast, station metadata, auto-refresh. Works as both full page (direct URL) and modal overlay (in-app navigation via intercepting routes) |
+| `/dashboard` | Built | Province picker (alphabetical), station cards with rating pills + outflow + capacity bars, province-scoped search (debounced), station type filter (R/L only), show inactive stations toggle, manual refresh button, infinite scroll (15 stations per page), memoized filter chains |
+| `/station/[station_number]` | Built | Full readings (flow/level/elevation/outflow), percentile bars, capacity bar for reservoirs, weather card (temp/wind+Beaufort/AQI/UV/humidity/sunrise/sunset), 7-day forecast, station metadata, manual refresh button. Works as both full page (direct URL) and modal overlay (in-app navigation via intercepting routes) |
 | `/login` | Placeholder | |
 | `/register` | Placeholder | |
 | `/map` | Not started | Interactive Leaflet map |
@@ -68,13 +78,13 @@ Shared component used by both the full station page and the modal overlay. Accep
 - Current readings stat row (flow, level/elevation, outflow, capacity)
 - Percentile bars with P25-P75 zone and current value marker
 - Capacity progress bar for reservoir stations (colour-coded: red/amber/green/blue/purple)
-- Weather card (fetched separately via `GET /api/stations/{id}/weather`): Temperature (with feels-like), Wind (speed + gusts + Beaufort scale), Air Quality Index (with category label), UV Index. Description row shows weather description, humidity, visibility. Shows a loading spinner while weather is being fetched.
+- Weather card (fetched separately via `GET /api/stations/{id}/weather`): Temperature (with feels-like), Wind (speed + gusts + Beaufort scale), Air Quality Index (with category label), UV Index. Description row shows weather description, sunrise/sunset, humidity, visibility. Shows a loading spinner while weather is being fetched.
 - 7-day forecast cards
 - Station metadata grid
-- Auto-refresh every 5 minutes
+- Manual refresh button (backend scheduler keeps data fresh every 10 minutes)
 
 ### StationCard
-Displays station name, number, type, latest readings (flow, level/elevation, capacity), individual rating pills for flow and level, a capacity progress bar for lake/reservoir stations, and freshness timestamp. Links to `/station/{station_number}`. Weather is not shown on cards (fetched on demand in StationDetail only).
+Displays station name, number, type, latest readings (flow, outflow, level/elevation, capacity), individual rating pills for flow and level, a capacity progress bar for lake/reservoir stations, and freshness timestamp. Links to `/station/{station_number}`. Weather is not shown on cards (fetched on demand in StationDetail only).
 
 - Lake/reservoir stations (`station_type === "L"`) show "Elevation" instead of "Level"
 - Capacity bar colour matches rating thresholds (red/amber/green/blue/purple)
@@ -119,7 +129,7 @@ Dark navy footer with nav links, data disclaimer (ECCC + provincial sources), an
 ## Constants (`src/lib/constants.js`)
 
 - `PROVINCES` — province code to full name mapping
-- `STATION_TYPES` — R/L/M to human labels
+- `STATION_TYPES` — R/L to human labels (meteorological excluded from user-facing displays)
 - `WMO_DESCRIPTIONS` — weather code to description mapping
 - `RATING_CONFIG` — rating label to colour/dot classes
 - `DATA_SOURCES` — provider code to display name (e.g., `alberta` → "Rivers Alberta", `eccc` → "ECCC")

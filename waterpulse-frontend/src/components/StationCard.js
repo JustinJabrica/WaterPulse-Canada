@@ -51,6 +51,17 @@ export default function StationCard({ station }) {
               <RatingPill rating={reading.flow_rating} />
             </div>
           )}
+          {/* Outflow — shown for dam/reservoir stations that report outflow
+              separately from discharge. No rating pill since the backend
+              does not compute percentile ratings for outflow. */}
+          {reading.outflow != null && (
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-slate-900">
+                <span>Outflow</span>{" "}
+                <span className="font-medium">{reading.outflow.toFixed(1)} m³/s</span>
+              </span>
+            </div>
+          )}
           {reading.water_level != null && (
             <div className="flex items-center justify-between text-xs">
               <span className="text-slate-900">

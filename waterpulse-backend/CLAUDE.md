@@ -14,7 +14,7 @@ app/
 ├── config.py            # All settings, URLs, paths, tuning constants
 ├── database.py          # Async SQLAlchemy engine and session
 ├── auth.py              # JWT creation, password hashing, auth dependencies
-├── scheduler.py         # APScheduler (readings refresh on interval)
+├── scheduler.py         # APScheduler (readings every 10 min, historical Jan 1st)
 ├── models/
 │   ├── station.py       # stations table
 │   ├── reading.py       # current_readings table
@@ -25,8 +25,8 @@ app/
 ├── schemas/
 │   └── __init__.py      # Pydantic request/response models
 ├── routes/
-│   ├── stations.py      # GET /api/stations/*
-│   ├── readings.py      # GET /api/readings/*
+│   ├── stations.py      # GET /api/stations/* (uses selectinload for eager reading fetch)
+│   ├── readings.py      # GET /api/readings/* (uses selectinload for eager reading fetch)
 │   ├── auth.py          # /api/auth/* (login, register, logout, me)
 │   ├── favorites.py     # /api/favorites CRUD
 │   └── admin.py         # /api/admin/sync-*, status
@@ -39,7 +39,7 @@ app/
     ├── station_sync.py          # Orchestrator: loops providers, merges, upserts
     ├── readings_refresh.py      # Orchestrator: loops providers, deduplicates, computes ratings
     ├── historical_sync.py       # Orchestrator: loops providers, builds percentile table
-    ├── weather.py               # Open-Meteo forecast + AQI fetch functions
+    ├── weather.py               # Open-Meteo forecast + AQI + humidity fetch functions
     ├── weather_cache.py         # On-demand weather: check cache, fetch if stale, upsert
     └── ratings.py               # Percentile computation (shared by all providers)
 ```
@@ -146,7 +146,7 @@ Latest readings with ratings and source tracking.
 - `discharge_symbol` — data quality flag (from ECCC; nullable)
 - `precip_last_6h`, `precip_last_12h`, `precip_last_24h`, `precip_last_48h` — mm (from Alberta; nullable)
 - Rating and percentile fields (computed by us)
-- `weather` — JSON column (deprecated, no longer populated; weather is now in `station_weather` table)
+- Weather data (including humidity, sunrise/sunset) is in the separate `station_weather` table
 
 ### `station_weather`
 Cached weather data per station, fetched on demand from Open-Meteo.
@@ -171,13 +171,13 @@ Unchanged. Favourites reference `station_number`.
 
 ### Stations
 - `GET /api/stations/` — list all (filterable by `province`, `station_type`, `basin`, `catchment`)
-- `GET /api/stations/provinces` — all provinces with station counts
+- `GET /api/stations/provinces` — all provinces with R/L station counts (meteorological excluded)
 - `GET /api/stations/basins` — Alberta basins with station groups and counts
 - `GET /api/stations/{station_number}` — single station detail
 - `GET /api/stations/{station_number}/current` — station with latest reading and rating
 - `GET /api/stations/{station_number}/weather` — cached weather (fetches from Open-Meteo if stale >30 min)
 - `GET /api/stations/nearby?lat=X&lon=Y&radius=50` — proximity search
-- `GET /api/stations/search?q=bow+river&province=AB` — text search on station name (optional `province` filter)
+- `GET /api/stations/search?q=bow+river&province=AB` — text search on station name (R/L only, optional `province` filter, default limit 100)
 
 ### Readings
 - `POST /api/readings/refresh` — on-demand readings refresh (filterable by `station_numbers`, `province`)
@@ -209,11 +209,11 @@ Unchanged. Favourites reference `station_number`.
 
 ### Orchestrator services (call providers)
 - `station_sync.py` — loops all providers, merges with Alberta priority, upserts to `stations` table. Run frequency: twice per year or on demand.
-- `readings_refresh.py` — loops all providers, deduplicates by station_number (first write wins), computes ratings against historical percentiles, and upserts (not delete-all). Weather is NOT fetched here — it's fetched on demand per station. Supports selective refresh by `station_numbers` or `province`. Run frequency: on demand via frontend (`POST /api/readings/refresh`) or admin endpoint.
-- `historical_sync.py` — loops all providers, fetches daily means, computes MM-DD aggregates for percentile table. Run frequency: quarterly (when HYDAT updates) or on demand. Initial sync for all of Canada is a long background job.
+- `readings_refresh.py` — loops all providers, deduplicates by station_number (first write wins), computes ratings against historical percentiles, and upserts (not delete-all). Weather is NOT fetched here — it's fetched on demand per station. Supports selective refresh by `station_numbers` or `province`. Run frequency: every 10 minutes via backend scheduler, plus on-demand via frontend (`POST /api/readings/refresh`) or admin endpoint.
+- `historical_sync.py` — loops all providers, fetches daily means, computes MM-DD aggregates for percentile table. Run frequency: annually on January 1st at 03:00 UTC via backend scheduler, plus on-demand via admin endpoint. Initial sync for all of Canada is a long background job.
 
 ### Shared services (source-agnostic)
-- `weather.py` — Open-Meteo forecast + air quality APIs with retry/backoff on 429. No API key needed.
+- `weather.py` — Open-Meteo forecast, humidity, sunrise/sunset, and air quality APIs with retry/backoff on 429. No API key needed.
 - `weather_cache.py` — On-demand weather: checks `station_weather` table, returns cached data if fresh (< `WEATHER_CACHE_TTL_MINUTES`), otherwise fetches for a single station and caches. Called by `GET /api/stations/{id}/weather`.
 - `ratings.py` — percentile computation using ±7 day window across up to 5 years of historical data. Minimum 5 values required.
 

@@ -44,9 +44,6 @@ class CurrentReading(Base):
     flow_percentiles: Mapped[dict | None] = mapped_column(JSON)
     level_percentiles: Mapped[dict | None] = mapped_column(JSON)
 
-    # Weather data from Open-Meteo (stored as JSON)
-    weather: Mapped[dict | None] = mapped_column(JSON)
-
     # Provider-specific data (precipitation, units, etc.)
     extra: Mapped[dict | None] = mapped_column(JSON)
 

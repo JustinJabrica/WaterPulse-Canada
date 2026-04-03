@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     ALBERTA_BASE_URL: str
     OPEN_METEO_FORECAST_URL: str
     OPEN_METEO_AQI_URL: str
-    READINGS_REFRESH_INTERVAL_MINUTES: int
+    READINGS_REFRESH_INTERVAL_MINUTES: int = 10
 
     # ── ECCC — Collection paths (constants) ────────────────────────
     # Appended to ECCC_BASE_URL. Listed here so you can see every

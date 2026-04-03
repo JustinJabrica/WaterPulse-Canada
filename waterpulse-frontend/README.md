@@ -8,6 +8,20 @@ Next.js 16 (App Router) with JavaScript, React 19, and Tailwind CSS 4.
 - `npm run start` — serve production build
 - `npm run lint` — ESLint check
 
+## Getting Started
+
+### Local Development
+1. `npm install` — install dependencies
+2. Create a `.env.local` file with `NEXT_PUBLIC_API_URL=http://localhost:8000`
+3. `npm run dev` — starts the dev server on http://localhost:3000
+
+### Docker
+1. Copy `.env.example` to `.env` at the **repo root** and fill in secrets
+2. Run `docker-compose up --build` from the repo root
+3. Open http://localhost (via Nginx) or http://localhost:3000 (direct)
+
+> The Docker setup builds a production image. For live code reloading during development, use the local approach above.
+
 ## Architecture
 ```
 src/
@@ -48,6 +62,8 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 ```
 
 **Important:** `.env.local` contains configuration and should never be committed to version control. It is listed in `.gitignore` by default.
+
+> **Build-time variable:** `NEXT_PUBLIC_API_URL` is baked into the client-side JavaScript at build time (this is a Next.js behaviour for all `NEXT_PUBLIC_*` variables). It **cannot be changed at runtime** — the Docker image must be rebuilt if you need a different URL. The default is `http://localhost:8000`. For production behind Nginx, use a relative URL or the full public domain.
 
 ## Authentication
 
@@ -190,10 +206,10 @@ Contains:
   - Wind (speed + gusts + Beaufort scale classification, e.g., "Beaufort 4 — Moderate Breeze")
   - Air Quality Index (AQI number + category label like "Good" or "Moderate")
   - UV Index
-  - Description row: weather description, humidity, visibility
+  - Description row: weather description, sunrise/sunset, humidity, visibility
 - **7-day Forecast card** — day name, high/low temps, weather description, precipitation amount
 - **Station Information card** — metadata grid (station number, type, province, data source, basin, catchment, coordinates, etc.)
-- Auto-refresh every 5 minutes while the page is visible
+- Manual refresh button (backend scheduler keeps data fresh every 10 minutes)
 
 #### Decimal Places
 
@@ -214,7 +230,7 @@ StationDetail uses a `StatBlock` component that accepts a `decimals` prop to con
 
 Card for station list views. Displays:
 - Station name, number, and type
-- Latest readings: flow (m³/s, 1 decimal), level/elevation (m, 1 decimal), with individual rating pills
+- Latest readings: flow (m³/s, 1 decimal), outflow (m³/s, 1 decimal), level/elevation (m, 1 decimal), with individual rating pills for flow and level
 - Capacity progress bar for lake/reservoir stations (colour-coded by fullness)
 - Data freshness timestamp (reading time, converted from UTC to local)
 
@@ -294,7 +310,7 @@ This file contains all the lookup tables and utility functions the frontend uses
 | Export | Purpose |
 |--------|---------|
 | `PROVINCES` | Province code to full name (e.g., `"AB"` to `"Alberta"`) |
-| `STATION_TYPES` | Station type code to label (`"R"` to `"River"`, `"L"` to `"Lake / Reservoir"`, `"M"` to `"Meteorological"`) |
+| `STATION_TYPES` | Station type code to label (`"R"` to `"River"`, `"L"` to `"Lake / Reservoir"`) — meteorological excluded |
 | `WMO_DESCRIPTIONS` | WMO weather code number to human description (e.g., `0` to `"Clear sky"`, `95` to `"Thunderstorm"`) |
 | `RATING_CONFIG` | Rating label to Tailwind colour classes for pills and dots |
 | `DATA_SOURCES` | Provider code to display name (`"alberta"` to `"Rivers Alberta"`, `"eccc"` to `"ECCC"`) |
@@ -311,8 +327,8 @@ This file contains all the lookup tables and utility functions the frontend uses
 | Route | Status | Key Features |
 |-------|--------|-------------|
 | `/` | Built | Landing page with live stats, hero, feature sections |
-| `/dashboard` | Built | Province picker, station cards with rating pills + capacity bars, province-scoped search with debounce, station type filter (All/River/Lake/Met), show inactive stations toggle, active station count by type in province header, auto-refresh every 5 min |
-| `/station/[station_number]` | Built | Full readings (flow/level/elevation), percentile bars with P25-P75 zone, capacity bar for reservoirs, weather card (temp/wind+Beaufort/AQI/UV — fetched separately with its own loading spinner), 7-day forecast, station metadata, data source label, auto-refresh. Works as modal overlay (in-app) or full page (direct URL) |
+| `/dashboard` | Built | Province picker (alphabetical), station cards with rating pills + outflow + capacity bars, province-scoped search with debounce, station type filter (All/River/Lake), show inactive stations toggle, active station count by type in province header, manual refresh button, infinite scroll (15 stations per page), memoized filter chains |
+| `/station/[station_number]` | Built | Full readings (flow/level/elevation/outflow), percentile bars with P25-P75 zone, capacity bar for reservoirs, weather card (temp/wind+Beaufort/AQI/UV/humidity/sunrise/sunset — fetched separately with its own loading spinner), 7-day forecast, station metadata, data source label, manual refresh button. Works as modal overlay (in-app) or full page (direct URL) |
 | `/login` | Placeholder | |
 | `/register` | Placeholder | |
 | `/map` | Not started | Interactive Leaflet map |
@@ -325,7 +341,7 @@ This file contains all the lookup tables and utility functions the frontend uses
 
 ### Province Picker
 
-Buttons for each province, sorted by total station count (largest first). Each button shows the province code and total station count. The selected province is highlighted in blue.
+Buttons for each province, sorted alphabetically by province code. Each button shows the province code and total station count. The selected province is highlighted in blue.
 
 ### Province Header
 
@@ -333,19 +349,35 @@ Shows the province name with a breakdown of active stations: "{X} River and {Y} 
 
 ### Province-Scoped Search
 
-The search bar sends queries to `GET /api/stations/search?q=X&province=Y&limit=50`, scoping results to the currently selected province. Search is debounced at 300ms. The search re-runs automatically if the province changes while a search query is active.
+The search bar sends queries to `GET /api/stations/search?q=X&province=Y&limit=200`, scoping results to the currently selected province. Search is debounced at 300ms. The search re-runs automatically if the province changes while a search query is active.
 
 ### Station Type Filter
 
-Filter buttons for All, River, Lake/Reservoir, and Meteorological. Each shows a count badge. The counts reflect the total stations (including inactive), while the grid only shows stations matching the current filter AND the `showNoData` toggle.
+Filter buttons for All, River, and Lake/Reservoir (meteorological stations excluded). Each shows a count badge. The counts reflect the total stations (including inactive), while the grid only shows stations matching the current filter AND the `showNoData` toggle.
 
 ### Show Inactive Stations Toggle
 
 A toggle button that shows/hides stations without current reading data. Default is off (inactive stations hidden). Shows a badge with the count of hidden stations. State persists in Zustand across navigation.
 
-### Auto-Refresh
+### Infinite Scroll
 
-The dashboard auto-refreshes readings every 5 minutes while the page is visible (uses `document.visibilityState`). A manual refresh button is also available.
+The dashboard renders station cards in batches of 15 to avoid loading hundreds of cards at once. All station data is fetched upfront from the API (per-province datasets are small enough), but rendering is controlled by a `displayCount` state variable that starts at 15 and grows as the user scrolls.
+
+**How it works:**
+1. An `IntersectionObserver` watches a sentinel `<div>` placed below the station grid
+2. When the sentinel enters the viewport (or comes within 200px via `rootMargin: "200px"`), `displayCount` increments by 15
+3. The grid renders `filteredStations.slice(0, displayCount)` — only the first `displayCount` cards
+4. A "Showing X active stations of Y total" counter appears above the grid (or "Showing all Y stations" when inactive stations are toggled on)
+5. A loading spinner shows below the grid while more cards are available
+6. The sentinel is hidden once all cards are rendered, so the observer stops firing
+
+**Reset behaviour:** `displayCount` resets to 15 whenever the user switches province, changes the type filter, toggles the "Show Inactive Stations" button, or gets new search results. This ensures each view always starts with the first batch of 15.
+
+**Performance:** All derived station lists and counts (`filteredStations`, `typeCounts`, `activeRiverCount`, etc.) are wrapped in `useMemo` so they only recalculate when their dependencies change, not on every render.
+
+### Data Freshness
+
+The backend scheduler refreshes readings every 10 minutes automatically. The frontend does not auto-refresh — users can trigger a manual refresh via the refresh button on the dashboard or station detail page.
 
 ## Timestamp Handling
 
@@ -449,6 +481,28 @@ Thresholds from Environment Canada. Displayed in the StationDetail wind stat blo
 | Average | P25 - P75 | 40 - 70% |
 | High | P75 - P90 | 71 - 90% |
 | Very High | > P90 | > 90% |
+
+## Docker
+
+### Dockerfile (Multi-Stage Build)
+
+The frontend Dockerfile (`waterpulse-frontend/Dockerfile`) uses a three-stage build to keep the production image small:
+
+| Stage | Base Image | Purpose |
+|-------|-----------|---------|
+| **deps** | `node:22-alpine` | Installs npm dependencies (`npm ci`) — cached unless package*.json changes |
+| **builder** | `node:22-alpine` | Copies source code and runs `npm run build` with the standalone output mode |
+| **runner** | `node:22-alpine` | Copies only the standalone server.js and static assets — final image ~100 MB |
+
+Without the multi-stage build, the image would be ~500 MB because it would include the full `node_modules/` directory.
+
+### next.config.mjs
+
+`output: "standalone"` was added to `next.config.mjs` to enable Next.js standalone builds. This produces a self-contained `server.js` in `.next/standalone/` that includes only the node_modules packages actually needed at runtime. This is required for the Docker production build.
+
+### .dockerignore
+
+The `.dockerignore` file excludes `node_modules/` (~300 MB) and `.next/` from the Docker build context. Without this, Docker would copy these directories into the build context (making builds slow), only for them to be recreated inside the container by `npm ci` and `npm run build`.
 
 ## Rules
 - All backend calls go through `src/lib/api.js` — never use raw `fetch()` or bare `axios`

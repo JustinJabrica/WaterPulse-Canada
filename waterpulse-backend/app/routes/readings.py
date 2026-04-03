@@ -4,11 +4,12 @@ from typing import List
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.models.station import Station
 from app.models.reading import CurrentReading
-from app.schemas import CurrentReadingResponse, StationWithReading
+from app.schemas import StationWithReading
 from app.services.readings_refresh import refresh_current_readings
 
 router = APIRouter(prefix="/api/readings", tags=["readings"])
@@ -17,25 +18,20 @@ router = APIRouter(prefix="/api/readings", tags=["readings"])
 # ── Helper ──────────────────────────────────────────────────────────
 
 
-async def _build_station_readings(
-    stations: list,
-    db: AsyncSession,
-) -> list[StationWithReading]:
+def _build_station_readings(stations: list) -> list[StationWithReading]:
     """Pair each station with its latest reading.
 
-    Builds the full StationWithReading response including all fields
-    from the Station model (province, data_source, drainage_basin_prefix, etc.).
+    Expects stations to have been loaded with
+    ``.options(selectinload(Station.current_readings))`` so the
+    readings are already in memory — no additional queries needed.
+
+    station.current_readings is a list (SQLAlchemy relationship), but
+    the unique constraint on station_number means it holds 0 or 1 items.
     """
     results = []
-    # station = Station DB model
     for station in stations:
-        reading_result = await db.execute(
-            select(CurrentReading)
-            .where(CurrentReading.station_number == station.station_number)
-            .order_by(CurrentReading.fetched_at.desc())
-            .limit(1)
-        )
-        reading = reading_result.scalar_one_or_none()
+        # Grab the single reading if it exists (unique constraint guarantees 0 or 1)
+        reading = station.current_readings[0] if station.current_readings else None
 
         results.append(
             StationWithReading(
@@ -114,9 +110,10 @@ async def get_readings_by_basin(
             Station.basin_number == basin_number.upper(),
             Station.station_type.in_(["R", "L"]),
         )
+        .options(selectinload(Station.current_readings))
         .order_by(Station.station_number)
     )
-    return await _build_station_readings(result.scalars().all(), db)
+    return _build_station_readings(result.scalars().all())
 
 
 @router.get("/by-catchment/{catchment}", response_model=list[StationWithReading])
@@ -131,9 +128,10 @@ async def get_readings_by_catchment(
             Station.catchment_number == catchment.upper(),
             Station.station_type.in_(["R", "L"]),
         )
+        .options(selectinload(Station.current_readings))
         .order_by(Station.station_number)
     )
-    return await _build_station_readings(result.scalars().all(), db)
+    return _build_station_readings(result.scalars().all())
 
 
 @router.get("/by-province/{province_code}", response_model=list[StationWithReading])
@@ -148,9 +146,10 @@ async def get_readings_by_province(
             Station.province == province_code.upper(),
             Station.station_type.in_(["R", "L"]),
         )
+        .options(selectinload(Station.current_readings))
         .order_by(Station.station_number)
     )
-    return await _build_station_readings(result.scalars().all(), db)
+    return _build_station_readings(result.scalars().all())
 
 
 @router.get(
@@ -172,9 +171,10 @@ async def get_readings_by_drainage_basin(
             Station.drainage_basin_prefix == prefix.upper(),
             Station.station_type.in_(["R", "L"]),
         )
+        .options(selectinload(Station.current_readings))
         .order_by(Station.station_number)
     )
-    return await _build_station_readings(result.scalars().all(), db)
+    return _build_station_readings(result.scalars().all())
 
 
 @router.get("/all", response_model=list[StationWithReading])
@@ -190,5 +190,8 @@ async def get_all_readings(
     if province:
         query = query.where(Station.province == province.upper())
 
-    result = await db.execute(query.order_by(Station.station_number))
-    return await _build_station_readings(result.scalars().all(), db)
+    result = await db.execute(
+        query.options(selectinload(Station.current_readings))
+        .order_by(Station.station_number)
+    )
+    return _build_station_readings(result.scalars().all())

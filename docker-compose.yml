@@ -1,0 +1,182 @@
+# =============================================================================
+# WaterPulse Canada — Docker Compose (Development)
+# =============================================================================
+#
+# Orchestrates 4 services: PostgreSQL, FastAPI backend, Next.js frontend,
+# and an Nginx reverse proxy that unifies them under a single origin.
+#
+# Quick start:
+#   1. Copy .env.example to .env and fill in secrets
+#   2. docker-compose up --build
+#   3. Open http://localhost (Nginx) or http://localhost:3000 (frontend direct)
+#
+# Environment variables:
+#   Docker Compose automatically loads ".env" from the project root and uses
+#   it to resolve ${VARIABLE} references in this YAML file. The .env file
+#   must exist before running docker-compose up.
+#
+# Architecture:
+#   Browser → :80 (nginx) → /api/* → backend:8000 → db:5432
+#                          → /*    → frontend:3000
+#
+# The Nginx proxy solves the cross-origin cookie problem: in production,
+# both frontend and backend are served from a single origin, so HTTPOnly
+# cookies set by the backend are automatically sent by the browser.
+#
+# Data persistence:
+#   - PostgreSQL data is stored in the "pgdata" named volume
+#   - Survives docker-compose down, only deleted with docker-compose down -v
+#
+# Development features:
+#   - Backend source code is bind-mounted for live reloading (--reload flag)
+#   - Frontend is built as a standalone production image (rebuild to see changes)
+#   - Database port 5432 is exposed for local tools (pgAdmin, psql, etc.)
+#
+# Useful commands:
+#   docker-compose up --build          # Start all services (rebuild images)
+#   docker-compose up -d --build       # Start in background
+#   docker-compose logs -f backend     # Follow backend logs
+#   docker-compose exec backend alembic upgrade head   # Run migrations manually
+#   docker-compose exec db psql -U waterpulse -d waterpulse  # Open psql shell
+#   docker-compose down                # Stop all (keeps database data)
+#   docker-compose down -v             # Stop all AND delete database data
+# =============================================================================
+
+services:
+  # ── PostgreSQL Database ─────────────────────────────────────────────────────
+  # Official PostgreSQL 16 on Alpine Linux (lightweight).
+  # Credentials are set via environment variables — POSTGRES_PASSWORD comes
+  # from the .env file (interpolated by Docker Compose at runtime).
+  # The healthcheck ensures the backend waits until PostgreSQL is truly ready
+  # to accept queries, not just TCP connections.
+  db:
+    image: postgres:16-alpine
+    env_file:
+      - .env     # Loads POSTGRES_PASSWORD for database initialisation
+    environment:
+      POSTGRES_USER: waterpulse
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}   # From .env
+      POSTGRES_DB: waterpulse
+    ports:
+      - "5432:5432"     # Exposed for local DB tools; remove in production
+    volumes:
+      - pgdata:/var/lib/postgresql/data   # Persist data across restarts
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U waterpulse"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── FastAPI Backend ─────────────────────────────────────────────────────────
+  # Python 3.12 running the FastAPI application server (uvicorn).
+  #
+  # Startup sequence (handled by entrypoint.sh):
+  #   1. Wait for PostgreSQL to accept queries (psycopg2 retry loop using
+  #      POSTGRES_PASSWORD env var — not DATABASE_URL_SYNC, which has the
+  #      SQLAlchemy dialect prefix that raw psycopg2 cannot parse)
+  #   2. Run Alembic migrations (alembic upgrade head)
+  #   3. Start uvicorn on port 8000
+  #
+  # Environment variables:
+  #   - env_file loads secrets from .env (SECRET_KEY, API URLs, etc.)
+  #   - DATABASE_URL / DATABASE_URL_SYNC are constructed here using the Docker
+  #     service name "db" as the hostname (only works inside the Docker network)
+  #   - FRONTEND_URL controls CORS allowed origins
+  #
+  # Development bind mounts:
+  #   - app/ and alembic/ are mounted from the host so code changes are
+  #     immediately visible inside the container. Combined with --reload,
+  #     uvicorn restarts automatically when you save a file.
+  backend:
+    build:
+      context: ./waterpulse-backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"     # Direct access; also proxied via Nginx at /api
+    env_file:
+      - .env     # Loads SECRET_KEY, API URLs, POSTGRES_PASSWORD, etc.
+    environment:
+      # Database connection strings use the Docker service name "db" as host.
+      # These override any DATABASE_URL in .env, ensuring the backend
+      # connects to the containerised PostgreSQL, not a local install.
+      DATABASE_URL: postgresql+asyncpg://waterpulse:${POSTGRES_PASSWORD}@db:5432/waterpulse
+      DATABASE_URL_SYNC: postgresql+psycopg2://waterpulse:${POSTGRES_PASSWORD}@db:5432/waterpulse
+      FRONTEND_URL: http://localhost:3000
+    depends_on:
+      db:
+        condition: service_healthy    # Wait for pg_isready, not just container start
+    volumes:
+      # Bind mounts for development hot-reloading.
+      # Changes to Python files on the host are reflected inside the container.
+      - ./waterpulse-backend/app:/app/app
+      - ./waterpulse-backend/alembic:/app/alembic
+    # The --reload flag is passed as extra args to uvicorn via entrypoint.sh.
+    # Remove this in production (use docker-compose.prod.yml override).
+    command: ["--reload"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s    # Allow time for Alembic migrations before checking
+
+  # ── Next.js Frontend ────────────────────────────────────────────────────────
+  # Multi-stage Docker build that produces a standalone Next.js server.
+  #
+  # NEXT_PUBLIC_API_URL is a build argument because Next.js bakes NEXT_PUBLIC_*
+  # variables into the JavaScript bundle at build time — they cannot be changed
+  # at runtime. For production behind Nginx, change this to a relative URL
+  # (e.g., "/api") so it works on any domain without rebuilding.
+  #
+  # The standalone output mode (configured in next.config.mjs) produces a
+  # self-contained server.js with only the necessary node_modules, reducing
+  # the production image from ~500 MB to ~100 MB.
+  frontend:
+    build:
+      context: ./waterpulse-frontend
+      dockerfile: Dockerfile
+      args:
+        # This URL gets embedded into the client-side JavaScript at build time.
+        # Must go through Nginx (port 80) so browser requests stay on the same
+        # origin — avoids CORS issues and allows HTTPOnly cookies to work.
+        NEXT_PUBLIC_API_URL: http://localhost
+    ports:
+      - "3000:3000"     # Direct access; also proxied via Nginx at /
+    depends_on:
+      - backend
+    healthcheck:
+      # Alpine images don't have curl, so use wget instead
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3000/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ── Nginx Reverse Proxy ─────────────────────────────────────────────────────
+  # Routes all traffic through a single origin:
+  #   /api/*        → backend:8000  (FastAPI)
+  #   /docs         → backend:8000  (Swagger UI)
+  #   /openapi.json → backend:8000  (OpenAPI spec)
+  #   /*            → frontend:3000 (Next.js)
+  #
+  # This is essential for HTTPOnly cookie auth — cookies set by the backend
+  # at /api/auth/login are automatically sent on subsequent requests because
+  # everything is served from the same origin (localhost:80).
+  #
+  # The config file is bind-mounted read-only (:ro) so you can edit it
+  # on the host and restart Nginx without rebuilding the image.
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"       # The unified entry point for the application
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - frontend
+      - backend
+
+# ── Named Volumes ─────────────────────────────────────────────────────────────
+# pgdata: Persists PostgreSQL data files across container restarts.
+# WARNING: docker-compose down -v will DELETE this volume and all database data.
+volumes:
+  pgdata:

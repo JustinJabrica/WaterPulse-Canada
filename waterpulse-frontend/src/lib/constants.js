@@ -114,10 +114,11 @@ export function getBeaufortScale(windSpeedKmh) {
 
 // ── Station type labels ─────────────────────────────────────────────
 
+// Only water station types — meteorological stations are excluded from
+// the dashboard and all readings endpoints (backend filters to R and L).
 export const STATION_TYPES = {
   R: "River",
   L: "Lake / Reservoir",
-  M: "Meteorological",
 };
 
 /**

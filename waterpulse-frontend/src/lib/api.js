@@ -73,5 +73,4 @@ const api = {
   del: (path, opts) => client.delete(path, opts),
 };
 
-export { api, client };
 export default api;

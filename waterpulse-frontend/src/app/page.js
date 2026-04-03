@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
+import RatingPill from "@/components/RatingPill";
 import api from "@/lib/api";
 
 /* ─────────────────────────────────────────────
@@ -251,22 +252,6 @@ function AudienceCard({ icon, title, people, description, accent, delay = 0 }) {
 }
 
 
-// ── Rating pill ──────────────────────────────
-
-function RatingPill({ label, color }) {
-  const colors = {
-    verylow: "bg-red-100 text-red-800 border-red-200",
-    low: "bg-amber-100 text-amber-800 border-amber-200",
-    average: "bg-emerald-100 text-emerald-800 border-emerald-200",
-    high: "bg-blue-100 text-blue-800 border-blue-200",
-    veryhigh: "bg-purple-100 text-purple-800 border-purple-200",
-  };
-  return (
-    <span className={`inline-block px-3 py-1 rounded-full text-xs font-semibold border ${colors[color]}`}>
-      {label}
-    </span>
-  );
-}
 
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -390,7 +375,7 @@ export default function LandingPage() {
               </div>
               <div>
                 <div className="font-display text-3xl sm:text-4xl text-[#1e6ba8] mb-1">
-                  &le; <AnimatedCounter target={5} suffix=" min" />
+                  &le; <AnimatedCounter target={10} suffix=" min" />
                 </div>
                 <div className="text-sm text-slate-500 font-medium">Refresh Cycle</div>
               </div>
@@ -431,11 +416,11 @@ export default function LandingPage() {
           </FadeIn>
           <FadeIn delay={300}>
             <div className="flex flex-wrap items-center justify-center gap-2">
-              <RatingPill label="Very Low" color="verylow" />
-              <RatingPill label="Low" color="low" />
-              <RatingPill label="Average" color="average" />
-              <RatingPill label="High" color="high" />
-              <RatingPill label="Very High" color="veryhigh" />
+              <RatingPill rating="very low" />
+              <RatingPill rating="low" />
+              <RatingPill rating="average" />
+              <RatingPill rating="high" />
+              <RatingPill rating="very high" />
             </div>
           </FadeIn>
         </div>
@@ -533,8 +518,8 @@ export default function LandingPage() {
             />
             <FeatureCard
               icon={<IconClock className="w-5 h-5" />}
-              title="5-Minute Updates"
-              description="Data refreshes automatically every five minutes around the clock. Every reading includes a timestamp so you always know how fresh the data is."
+              title="10-Minute Updates"
+              description="Data refreshes automatically every ten minutes around the clock. Every reading includes a timestamp so you always know how fresh the data is."
               delay={400}
             />
           </div>
