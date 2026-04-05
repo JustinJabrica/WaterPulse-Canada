@@ -63,9 +63,8 @@ async def _run_historical_sync():
 
     logger.info("Scheduler: starting annual historical sync...")
     try:
-        async with async_session() as db:
-            result = await sync_historical_data(db)
-            logger.info(f"Scheduler: historical sync complete — {result}")
+        result = await sync_historical_data()
+        logger.info(f"Scheduler: historical sync complete — {result}")
     except Exception as e:
         logger.error(f"Scheduler: historical sync failed — {e}", exc_info=True)
 

@@ -1,0 +1,42 @@
+# =============================================================================
+# PersistentVolumeClaim (PVC) — PostgreSQL Data
+# =============================================================================
+#
+# A PVC is Kubernetes' way of requesting persistent storage. It's the K8s
+# equivalent of the `pgdata` named volume in docker-compose.
+#
+# How it works:
+#   1. This PVC says "I need 2GB of storage that one pod can write to"
+#   2. The cluster's storage provisioner creates a PersistentVolume (PV)
+#      that satisfies this request
+#   3. The PostgreSQL pod mounts this volume at /var/lib/postgresql/data
+#   4. Data survives pod restarts, redeployments, and even node reboots
+#
+# Storage provisioners:
+#   - kind: uses the "local-path" provisioner (stores data on the node's filesystem)
+#   - AWS EKS: provisions an EBS volume
+#   - GCP GKE: provisions a Persistent Disk
+#   - Azure AKS: provisions a Managed Disk
+#   No manifest changes needed — the provisioner is a cluster-level setting.
+#
+# To delete all data (equivalent to docker-compose down -v):
+#   kubectl delete pvc db-pvc -n waterpulse
+# =============================================================================
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: db-pvc
+  namespace: waterpulse
+spec:
+  # ReadWriteOnce means only one pod can mount this volume for writing at
+  # a time. This is correct for a single-replica database. (Other modes:
+  # ReadWriteMany for shared storage, ReadOnlyMany for read-only access.)
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      # 2Gi is plenty for development. The actual station data (readings,
+      # historical means, weather cache) for all of Canada is under 500MB.
+      # Increase this for production if needed.
+      storage: 2Gi

@@ -352,10 +352,13 @@ class ECCCProvider(BaseProvider):
         station_number: str,
         start_date: datetime,
         end_date: datetime,
+        client=None,
     ) -> list[NormalizedDailyMean]:
         """
         Fetch historical daily mean flow/level for a single station
         over the given date range. Paginates at ECCC's limit.
+
+        If client is provided, reuses it for connection pooling.
         """
         all_means: list[NormalizedDailyMean] = []
 
@@ -364,9 +367,7 @@ class ECCCProvider(BaseProvider):
             f"{end_date.strftime('%Y-%m-%d')}"
         )
 
-        async with httpx.AsyncClient(
-            timeout=settings.ECCC_REQUEST_TIMEOUT
-        ) as client:
+        async def _fetch(http_client):
             offset = 0
             while True:
                 params = {
@@ -378,7 +379,7 @@ class ECCCProvider(BaseProvider):
                 }
 
                 try:
-                    resp = await client.get(
+                    resp = await http_client.get(
                         settings.eccc_daily_mean_url, params=params
                     )
                     resp.raise_for_status()
@@ -386,7 +387,7 @@ class ECCCProvider(BaseProvider):
                 except (httpx.HTTPError, httpx.TimeoutException) as e:
                     logger.error(
                         f"ECCC historical {station_number} "
-                        f"offset={offset}: {e}"
+                        f"offset={offset}: {type(e).__name__}: {e}"
                     )
                     break
 
@@ -404,6 +405,14 @@ class ECCCProvider(BaseProvider):
                 if len(features) < 10000:
                     break
                 offset += 10000
+
+        if client:
+            await _fetch(client)
+        else:
+            async with httpx.AsyncClient(
+                timeout=settings.ECCC_REQUEST_TIMEOUT
+            ) as new_client:
+                await _fetch(new_client)
 
         logger.info(
             f"ECCC: {station_number} — {len(all_means)} historical records"

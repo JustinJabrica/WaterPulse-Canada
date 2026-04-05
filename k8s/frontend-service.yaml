@@ -1,0 +1,27 @@
+# =============================================================================
+# Service — Next.js Frontend
+# =============================================================================
+#
+# Exposes the frontend Deployment within the cluster. The Ingress resource
+# routes all non-API traffic (/*) to this Service, which forwards it to the
+# frontend pod running the Next.js standalone server.
+#
+# Traffic flow:
+#   Browser → localhost:80 (Ingress) → frontend-service:3000 → frontend pod
+#
+# ClusterIP means this Service is only reachable from within the cluster —
+# external traffic arrives through the Ingress, not directly to this Service.
+# =============================================================================
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-service
+  namespace: waterpulse
+spec:
+  selector:
+    app: frontend
+  ports:
+    - port: 3000
+      targetPort: 3000
+  type: ClusterIP

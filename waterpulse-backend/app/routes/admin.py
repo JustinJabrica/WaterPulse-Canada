@@ -32,15 +32,13 @@ async def trigger_station_sync(db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/sync-historical")
-async def trigger_historical_sync(
-    province: str | None = Query(None, description="Filter to a single province (e.g., AB, BC, ON)"),
-    db: AsyncSession = Depends(get_db),
-):
+async def trigger_historical_sync():
     """
-    Fetch historical daily means from all providers.
-    Pass ?province=AB to sync one province at a time instead of all of Canada.
+    Fetch historical daily means from all providers for all of Canada.
+    This is a long-running operation — in Kubernetes, use the CronJob
+    (job-historical-sync.yaml) instead of this endpoint.
     """
-    summary = await sync_historical_data(db, province=province)
+    summary = await sync_historical_data()
     return {"status": "complete", **summary}
 
 

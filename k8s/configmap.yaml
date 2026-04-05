@@ -1,0 +1,67 @@
+# =============================================================================
+# ConfigMap — WaterPulse
+# =============================================================================
+#
+# A ConfigMap stores non-sensitive configuration as key-value pairs. Unlike
+# Secrets, these values are stored in plain text and are safe to commit to
+# version control.
+#
+# How it's used:
+#   Deployments reference this ConfigMap via `envFrom: configMapRef`, which
+#   injects ALL keys as environment variables into the container. This is
+#   equivalent to docker-compose's `env_file:` directive.
+#
+# Why separate from Secrets?
+#   - ConfigMaps are for configuration that can be public (API URLs, timeouts)
+#   - Secrets are for values that must be protected (passwords, keys)
+#   - This separation follows the principle of least privilege
+#
+# To update a value:
+#   1. Edit this file
+#   2. kubectl apply -f k8s/configmap.yaml
+#   3. Restart the affected deployment:
+#        kubectl rollout restart deployment/backend -n waterpulse
+#      (Pods don't automatically pick up ConfigMap changes)
+# =============================================================================
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: waterpulse-config
+  namespace: waterpulse
+data:
+  # ── Database connection ────────────────────────────────────────────────
+  # POSTGRES_HOST tells the backend entrypoint.sh where to find PostgreSQL.
+  # In docker-compose this defaults to "db" (the service name). In K8s, we
+  # use "db-service" (the name of our ClusterIP Service for PostgreSQL).
+  POSTGRES_HOST: "db-service"
+  POSTGRES_USER: "waterpulse"
+  POSTGRES_DB: "waterpulse"
+
+  # ── Authentication ─────────────────────────────────────────────────────
+  # JWT algorithm and session duration. SECRET_KEY is in the Secret, not here.
+  ALGORITHM: "HS256"
+  ACCESS_TOKEN_EXPIRE_MINUTES: "1440"    # 24 hours
+
+  # ── CORS ───────────────────────────────────────────────────────────────
+  # The backend checks this URL to allow cross-origin requests from the
+  # frontend. In K8s with Ingress, both frontend and backend are behind
+  # the same origin (localhost:80), so CORS is less of an issue — but the
+  # backend still needs this for its allow_origins list.
+  FRONTEND_URL: "http://localhost:3000"
+
+  # ── External data source URLs ──────────────────────────────────────────
+  # These are the APIs the backend fetches water station data from.
+  # All have sensible defaults in config.py, but we set them explicitly
+  # here for visibility and easy overriding.
+  ECCC_BASE_URL: "https://api.weather.gc.ca"
+  ECCC_DATAMART_BASE_URL: "https://dd.weather.gc.ca/today/hydrometric"
+  ALBERTA_BASE_URL: "https://rivers.alberta.ca"
+  OPEN_METEO_FORECAST_URL: "https://api.open-meteo.com/v1/forecast"
+  OPEN_METEO_AQI_URL: "https://air-quality-api.open-meteo.com/v1/air-quality"
+
+  # ── Scheduler ──────────────────────────────────────────────────────────
+  # How often the backend scheduler refreshes station readings (in minutes).
+  # The scheduler also runs a historical sync annually on January 1st at
+  # 03:00 UTC — that's configured in code, not here.
+  READINGS_REFRESH_INTERVAL_MINUTES: "10"

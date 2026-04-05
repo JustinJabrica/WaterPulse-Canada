@@ -315,7 +315,7 @@ waterpulse-backend/
 ├── app/
 │   ├── main.py                  # Application entry point, middleware, lifespan
 │   ├── config.py                # All configuration (loaded from .env)
-│   ├── database.py              # Database engine, session factory, Base class
+│   ├── database.py              # Database engine (pool_pre_ping, pool_recycle), session factory, Base class
 │   ├── auth.py                  # JWT, password hashing, cookie management
 │   ├── scheduler.py             # APScheduler (readings every 10 min, historical Jan 1st)
 │   │
@@ -889,7 +889,7 @@ There are three orchestrators:
 |---|---|---|
 | `station_sync.py` | Merges station metadata from all providers, upserts to DB | Twice per year or on demand |
 | `readings_refresh.py` | Merges readings, computes percentile ratings, upserts to `current_readings` table | Every 10 minutes |
-| `historical_sync.py` | Fetches daily means per station, upserts to `historical_daily_means` table | Annually (Jan 1st) or on demand |
+| `historical_sync.py` | Fetches daily means per station, upserts in batches of 200 rows using short-lived DB sessions | Annually (Jan 1st) or on demand |
 
 ### Merge Strategy (Alberta Priority)
 
@@ -1181,6 +1181,7 @@ Station sync is NOT scheduled — it's triggered manually via the admin endpoint
 
 | Method | Path | Description |
 |---|---|---|
+| POST | `/api/readings/refresh` | On-demand readings refresh (filterable by `station_numbers`, `province`) |
 | GET | `/api/readings/last-updated` | Timestamp of most recent data refresh |
 | GET | `/api/readings/all` | All current readings (filterable by `station_type`, `province`) |
 | GET | `/api/readings/by-province/{province_code}` | Current readings for all R/L stations in a province |
@@ -1210,7 +1211,7 @@ Station sync is NOT scheduled — it's triggered manually via the admin endpoint
 | Method | Path | Description | Frequency |
 |---|---|---|---|
 | POST | `/api/admin/sync-stations` | Run station sync across all providers | Twice per year or on demand |
-| POST | `/api/admin/sync-historical` | Run historical sync (can take hours for all of Canada) | Annually (Jan 1st auto) or on demand |
+| POST | `/api/admin/sync-historical` | Run historical sync for all of Canada (can take hours; in K8s, use the CronJob instead) | Annually (Jan 1st auto) or on demand |
 | POST | `/api/admin/refresh-readings` | Manual readings refresh | On demand (auto every 10 min) |
 | GET | `/api/admin/status` | Station counts by province/source, reading counts, historical stats | Any time |
 
@@ -1611,13 +1612,13 @@ These stub records get enriched on the next station sync when the provider fetch
 
 Weather used to be fetched for every station during the 10-minute readings refresh, which added 15-30 seconds to each cycle. Now weather is fetched on demand per station via `GET /api/stations/{station_number}/weather` and cached for 30 minutes in the `station_weather` table. This made the readings refresh significantly faster (3 phases instead of 4) and eliminated unnecessary Open-Meteo calls for stations nobody is viewing.
 
-The `weather` JSON column has been removed from `current_readings` (migration 0002). Weather data is served exclusively from the `station_weather` table via the dedicated weather endpoint.
+Weather data is served exclusively from the `station_weather` table via the dedicated weather endpoint.
 
 ### Historical Sync Is a Long Job
 
 The initial historical sync for all of Canada downloads 5 years of daily means for thousands of stations. For ECCC stations, this means paginated API calls at 10,000 rows per request. For Alberta stations, this means downloading and parsing 365-day CSV files.
 
-Expect the first run to take hours. Subsequent runs are faster because the upsert only updates changed values. Run Alberta first (the stations users care about most), then expand province by province.
+Expect the first full run to take up to 1.5 hours. Subsequent runs are similar in duration because every station is re-synced, but the upsert only writes changed values. Inserts are batched (200 rows per statement) to avoid connection drops in containerised environments.
 
 ### Minimum 5 Values for Percentiles
 
@@ -1795,7 +1796,7 @@ The backend Dockerfile (`waterpulse-backend/Dockerfile`) uses Python 3.12-slim (
 
 The entrypoint script runs every time the backend container starts:
 
-1. **Wait for PostgreSQL** — uses `psycopg2` with individual connection params (`host='db'`, `password` from `POSTGRES_PASSWORD` env var) to verify the database accepts queries. Retries every 2 seconds for up to 30 attempts. We use individual params instead of `DATABASE_URL_SYNC` because the SQLAlchemy dialect prefix (`postgresql+psycopg2://`) is not valid for raw psycopg2.
+1. **Wait for PostgreSQL** — uses `psycopg2` with individual connection params (`host` from `POSTGRES_HOST` env var defaulting to `db`, `password` from `POSTGRES_PASSWORD` env var) to verify the database accepts queries. Retries every 2 seconds for up to 30 attempts. We use individual params instead of `DATABASE_URL_SYNC` because the SQLAlchemy dialect prefix (`postgresql+psycopg2://`) is not valid for raw psycopg2. The `POSTGRES_HOST` default of `db` matches the docker-compose service name; in Kubernetes, the ConfigMap sets it to `db-service`.
 2. **Run Alembic migrations** — `alembic upgrade head` brings the schema to the latest version. If this fails, the container stops (the API will not start with an outdated schema).
 3. **Start uvicorn** — serves the FastAPI app on `0.0.0.0:8000`. Extra arguments from docker-compose `command` (e.g., `--reload`) are passed through.
 
@@ -1845,6 +1846,56 @@ The `.dockerignore` file excludes `__pycache__/`, `.venv/`, `.env` files, and te
 - Prevents secrets (`.env`) from being copied into the Docker image
 - Keeps the build context small and builds fast (the `.venv/` alone can be 200+ MB)
 - Avoids stale bytecode (`__pycache__/`) interfering with the container's Python runtime
+
+---
+
+## Kubernetes
+
+The backend runs identically on a local kind cluster. See `k8s/README.md` in the project root for the full setup guide.
+
+### Key differences from Docker Compose
+
+| Aspect | Docker Compose | Kubernetes |
+|--------|---------------|------------|
+| Database hostname | `db` (service name) | `db-service` (K8s Service name, set via `POSTGRES_HOST` in ConfigMap) |
+| Database URL | Set in `docker-compose.yml` | Constructed in `backend-deployment.yaml` using `$(POSTGRES_PASSWORD)` K8s variable interpolation |
+| Secrets | `.env` file | `k8s/secrets.yaml` (base64-encoded, gitignored) |
+| Config | `.env` file | `k8s/configmap.yaml` (plain text, committed) |
+| Reverse proxy | Nginx container | NGINX Ingress Controller (cluster addon) |
+| Historical sync | APScheduler (inside uvicorn process) | CronJob (`job-historical-sync.yaml`) — dedicated pod |
+| Image loading | Automatic (build context) | Manual: `docker build` then `kind load docker-image` |
+
+### Backend-specific K8s notes
+
+- **startupProbe** allows 120 seconds for Alembic migrations to complete before Kubernetes considers the pod failed
+- **envFrom: configMapRef** injects all ConfigMap keys as environment variables (equivalent to docker-compose `env_file`)
+- **secretKeyRef** pulls `POSTGRES_PASSWORD` and `SECRET_KEY` from the K8s Secret
+- **DATABASE_URL** uses K8s-native variable interpolation: `$(POSTGRES_PASSWORD)` is replaced with the actual value at pod startup
+- **entrypoint.sh** reads `POSTGRES_HOST` from the environment (defaults to `db` for backward compatibility with docker-compose)
+- **Historical sync** runs as a CronJob (Jan 1st at 03:00 UTC) in its own pod, avoiding liveness probe kills and Ingress timeouts. Trigger manually with: `kubectl create job --from=cronjob/historical-sync manual-sync -n waterpulse`
+
+### Common K8s commands for the backend
+
+```bash
+# View backend logs
+kubectl logs deployment/backend -n waterpulse
+
+# Follow logs in real-time
+kubectl logs -f deployment/backend -n waterpulse
+
+# Open a shell in the backend pod
+kubectl exec -it deployment/backend -n waterpulse -- /bin/bash
+
+# Restart after code changes
+docker build -t waterpulse-backend:latest ./waterpulse-backend
+kind load docker-image waterpulse-backend:latest --name waterpulse
+kubectl rollout restart deployment/backend -n waterpulse
+
+# Run Alembic manually inside the pod
+kubectl exec deployment/backend -n waterpulse -- alembic upgrade head
+kubectl exec deployment/backend -n waterpulse -- alembic current
+
+```
 
 ---
 

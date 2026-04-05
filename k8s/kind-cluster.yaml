@@ -1,0 +1,60 @@
+# =============================================================================
+# kind Cluster Configuration — WaterPulse
+# =============================================================================
+#
+# kind (Kubernetes IN Docker) creates a local Kubernetes cluster where each
+# "node" is actually a Docker container. This config file tells kind how to
+# set up that cluster.
+#
+# Usage:
+#   kind create cluster --name waterpulse --config k8s/kind-cluster.yaml
+#
+# What this does:
+#   1. Creates a single-node cluster (one container acting as both the
+#      control plane and a worker node)
+#   2. Maps ports 80 and 443 from your host machine into the cluster node
+#      so the NGINX Ingress Controller can receive browser traffic
+#   3. Labels the node so the Ingress Controller knows to run on it
+#
+# After creation, install the NGINX Ingress Controller:
+#   kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
+#
+# Then the app is accessible at http://localhost (port 80), just like
+# docker-compose.
+# =============================================================================
+
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+
+nodes:
+  - role: control-plane
+
+    # ── Node labels ──────────────────────────────────────────────────────
+    # The NGINX Ingress Controller for kind looks for nodes with the label
+    # "ingress-ready=true" to know where to schedule its pods. Without
+    # this label, the Ingress Controller won't start and no traffic will
+    # reach your services.
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "ingress-ready=true"
+
+    # ── Port mappings ────────────────────────────────────────────────────
+    # These map ports on your host machine (localhost) to ports inside the
+    # kind Docker container. This is how browser requests at localhost:80
+    # reach the NGINX Ingress Controller running inside the cluster.
+    #
+    # Without these mappings, you'd need to use `kubectl port-forward`
+    # every time you want to access the app.
+    #
+    # containerPort 80  → HTTP traffic  (Ingress Controller listens here)
+    # containerPort 443 → HTTPS traffic (for future TLS support)
+    extraPortMappings:
+      - containerPort: 80
+        hostPort: 80
+        protocol: TCP
+      - containerPort: 443
+        hostPort: 443
+        protocol: TCP

@@ -1,0 +1,148 @@
+# =============================================================================
+# Ingress — Path-Based Routing (replaces Nginx reverse proxy)
+# =============================================================================
+#
+# An Ingress is Kubernetes' built-in way to route external HTTP traffic to
+# Services inside the cluster. It replaces the standalone Nginx container
+# from docker-compose with the same routing rules.
+#
+# How it works:
+#   1. The NGINX Ingress Controller runs as a pod in the cluster (installed
+#      separately — see README). It watches for Ingress resources.
+#   2. When this Ingress is applied, the controller reads the routing rules
+#      and configures its internal Nginx to match.
+#   3. External traffic arrives at the controller pod (mapped to host port 80
+#      via kind-cluster.yaml's extraPortMappings), and the controller routes
+#      it based on the path rules defined below.
+#
+# Routing rules (identical to nginx/default.conf):
+#   /api/*        → backend-service:8000    FastAPI REST endpoints
+#   /docs         → backend-service:8000    Swagger UI documentation
+#   /openapi.json → backend-service:8000    OpenAPI specification
+#   /*            → frontend-service:3000   Next.js pages and static assets
+#
+# Why use an Ingress instead of keeping the Nginx container?
+#   - Cloud providers (AWS, GCP, Azure) automatically provision load balancers
+#     when they see an Ingress resource — no extra config needed
+#   - The NGINX Ingress Controller is a mature, well-maintained project that
+#     handles TLS termination, rate limiting, and more
+#   - One less container to build and maintain
+#   - Standard K8s pattern — any engineer familiar with K8s will understand it
+#
+# Prerequisites:
+#   Install the NGINX Ingress Controller for kind:
+#   kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
+#   kubectl wait --namespace ingress-nginx \
+#     --for=condition=ready pod \
+#     --selector=app.kubernetes.io/component=controller \
+#     --timeout=90s
+# =============================================================================
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: waterpulse-ingress
+  namespace: waterpulse
+  annotations:
+    # ── Annotation: Rewrite target ─────────────────────────────────────
+    # When a request matches a path rule, the Ingress Controller rewrites
+    # the URL path before forwarding it to the backend Service. The $1
+    # capture group comes from the regex in the path rules below.
+    #
+    # Example: Browser requests /api/stations/provinces
+    #   → path regex captures: $1 = /api/stations/provinces
+    #   → rewrite-target sends: /api/stations/provinces to backend-service
+    #
+    # Without this, the controller might strip or alter the path in
+    # unexpected ways depending on the path type.
+    nginx.ingress.kubernetes.io/rewrite-target: /$1
+
+    # ── Annotation: Use regex ──────────────────────────────────────────
+    # Enables regex matching in path rules. Without this, paths are matched
+    # literally and the capture group syntax wouldn't work.
+    nginx.ingress.kubernetes.io/use-regex: "true"
+
+    # ── Annotation: Proxy timeouts ─────────────────────────────────────
+    # The NGINX Ingress Controller defaults to 60-second timeouts. This is
+    # too short for long-running API calls like sync-historical (which
+    # fetches years of data for thousands of stations and can take 10+ min).
+    # These annotations increase the timeouts to 30 minutes (1800 seconds).
+    #
+    # proxy-read-timeout:    how long Nginx waits for the backend to send
+    #                        a response after the request was forwarded
+    # proxy-send-timeout:    how long Nginx waits to finish sending data
+    #                        to the backend
+    # proxy-connect-timeout: how long Nginx waits to establish a connection
+    #                        to the backend (kept short — if it can't connect
+    #                        in 30s, something is wrong)
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "1800"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "1800"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "30"
+spec:
+  # ── Ingress class ────────────────────────────────────────────────────
+  # Tells Kubernetes which Ingress Controller should handle this resource.
+  # "nginx" matches the NGINX Ingress Controller we installed. If you had
+  # multiple controllers (e.g., nginx + traefik), this field tells each
+  # one which Ingress resources belong to it.
+  #
+  # This replaces the older annotation "kubernetes.io/ingress.class" which
+  # is deprecated. The spec field is the modern, standard approach.
+  ingressClassName: nginx
+  rules:
+    # ── Host-based routing ───────────────────────────────────────────────
+    # No "host:" field means this rule applies to ALL hostnames (including
+    # localhost). In production, you'd add: host: waterpulse.example.com
+    # to only match traffic for your domain.
+    - http:
+        paths:
+          # ── Backend: API endpoints ───────────────────────────────────
+          # Matches any path starting with /api/ — this covers all FastAPI
+          # REST endpoints. The (.*) capture group preserves the full path.
+          #
+          # pathType: ImplementationSpecific is required when using regex
+          # patterns. The other options (Prefix, Exact) don't support regex.
+          - path: /(api/.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: backend-service
+                port:
+                  number: 8000
+
+          # ── Backend: Swagger documentation ───────────────────────────
+          # FastAPI auto-generates interactive API docs at /docs.
+          # Accessible at http://localhost/docs in the browser.
+          - path: /(docs.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: backend-service
+                port:
+                  number: 8000
+
+          # ── Backend: OpenAPI specification ────────────────────────────
+          # The JSON schema that powers Swagger UI. Swagger fetches this
+          # by absolute path, so it needs its own routing rule.
+          - path: /(openapi\.json)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: backend-service
+                port:
+                  number: 8000
+
+          # ── Frontend: catch-all ──────────────────────────────────────
+          # Everything that doesn't match the above rules goes to the
+          # Next.js frontend. This includes pages (/dashboard, /station/*),
+          # static assets (_next/static/*), and the favicon.
+          #
+          # IMPORTANT: This rule must be LAST. Kubernetes evaluates Ingress
+          # path rules in order, and the first match wins. If this catch-all
+          # were first, it would swallow all API requests too.
+          - path: /(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: frontend-service
+                port:
+                  number: 3000

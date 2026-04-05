@@ -1,0 +1,24 @@
+# =============================================================================
+# Namespace — WaterPulse
+# =============================================================================
+#
+# A Kubernetes namespace is like a virtual folder that groups related
+# resources together. All WaterPulse pods, services, secrets, and configs
+# live in the "waterpulse" namespace.
+#
+# Benefits:
+#   - Isolation: WaterPulse resources won't clash with other apps in the cluster
+#   - Easy cleanup: `kubectl delete namespace waterpulse` removes everything
+#   - Access control: you can set permissions per namespace (useful in production)
+#
+# Every other manifest in this directory specifies `namespace: waterpulse`
+# in its metadata, which means it will be created inside this namespace.
+#
+# To see all resources in this namespace:
+#   kubectl get all -n waterpulse
+# =============================================================================
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: waterpulse

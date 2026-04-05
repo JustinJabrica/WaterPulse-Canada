@@ -34,16 +34,21 @@ set -e    # Exit immediately if any command fails
 # ── Step 1: Wait for PostgreSQL ──────────────────────────────────────────────
 # Uses psycopg2 to verify PostgreSQL accepts queries (not just TCP connections).
 # Retries every 2 seconds for up to 30 attempts (60 seconds total).
-# Connection params come from environment variables set in docker-compose.yml.
+# Connection params come from environment variables set in docker-compose.yml
+# or the Kubernetes ConfigMap.
 # We use individual params instead of DATABASE_URL_SYNC because the SQLAlchemy
 # dialect prefix (postgresql+psycopg2://) is not valid for raw psycopg2.
+#
+# POSTGRES_HOST defaults to "db" (the docker-compose service name). In K8s,
+# the ConfigMap sets POSTGRES_HOST=db-service (the K8s Service name).
+# This keeps the script backward-compatible with both environments.
 echo "Waiting for database..."
 for i in $(seq 1 30); do
     python -c "
 import os, psycopg2
 try:
     conn = psycopg2.connect(
-        host='db',
+        host=os.environ.get('POSTGRES_HOST', 'db'),
         port=5432,
         user='waterpulse',
         dbname='waterpulse',

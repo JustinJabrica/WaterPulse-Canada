@@ -172,10 +172,14 @@ class BaseProvider(ABC):
         station_number: str,
         start_date: datetime,
         end_date: datetime,
+        client=None,
     ) -> list[NormalizedDailyMean]:
         """
         Fetch historical daily mean flow/level for a single station
         over the given date range. Returns normalized daily means
         ready for percentile table construction by the orchestrator.
+
+        If client (httpx.AsyncClient) is provided, reuse it for
+        connection pooling. Otherwise create a new one per call.
         """
         ...

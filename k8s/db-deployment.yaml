@@ -1,0 +1,129 @@
+# =============================================================================
+# Deployment — PostgreSQL 16 Database
+# =============================================================================
+#
+# A Deployment tells Kubernetes "run this container image with these settings
+# and keep N replicas alive at all times." If a pod crashes, the Deployment
+# controller automatically creates a replacement.
+#
+# This is the K8s equivalent of the `db:` service in docker-compose.
+#
+# Key decisions:
+#   - replicas: 1 — only one PostgreSQL instance (sufficient for dev/staging)
+#   - strategy: Recreate — kill the old pod before starting the new one.
+#     We can't use RollingUpdate because only one pod can write to the PVC
+#     at a time. (In production, use a managed database like RDS instead.)
+#   - Resource limits prevent the database from consuming all cluster resources
+#
+# To check database logs:
+#   kubectl logs deployment/db -n waterpulse
+#
+# To open a psql shell:
+#   kubectl exec -it deployment/db -n waterpulse -- psql -U waterpulse -d waterpulse
+# =============================================================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: db
+  namespace: waterpulse
+spec:
+  # Only one replica — PostgreSQL is not designed to share a data directory
+  # between multiple processes. For high availability, use a managed database
+  # service (RDS, Cloud SQL, Azure Database) instead of running your own.
+  replicas: 1
+
+  # Recreate strategy: stop the old pod completely before starting the new one.
+  # This prevents two pods from trying to write to the same PVC simultaneously,
+  # which would corrupt the database. (RollingUpdate would briefly run both.)
+  strategy:
+    type: Recreate
+
+  # selector tells the Deployment which pods it manages. It must match the
+  # labels in the pod template below. This is how Kubernetes knows "these
+  # pods belong to this Deployment."
+  selector:
+    matchLabels:
+      app: db
+
+  template:
+    metadata:
+      # Labels are key-value pairs attached to pods. The Service (db-service.yaml)
+      # uses these labels to find and route traffic to the right pods.
+      labels:
+        app: db
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+
+          ports:
+            # Declare that this container listens on port 5432.
+            # This is informational — it doesn't actually open the port.
+            # The Service (db-service.yaml) handles routing traffic here.
+            - containerPort: 5432
+
+          # ── Environment variables ──────────────────────────────────────
+          env:
+            - name: POSTGRES_USER
+              value: "waterpulse"
+            - name: POSTGRES_DB
+              value: "waterpulse"
+            # POSTGRES_PASSWORD is pulled from the Secret (not hardcoded).
+            # secretKeyRef tells Kubernetes: "look up the Secret named
+            # 'waterpulse-secrets' and inject the value of the key
+            # 'POSTGRES_PASSWORD' as this environment variable."
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: waterpulse-secrets
+                  key: POSTGRES_PASSWORD
+
+          # ── Volume mount ───────────────────────────────────────────────
+          volumeMounts:
+            - name: pgdata
+              mountPath: /var/lib/postgresql/data
+              # subPath prevents PostgreSQL from seeing the lost+found directory
+              # that exists at the root of ext4-formatted volumes. Without this,
+              # PostgreSQL would refuse to initialise because the directory is
+              # "not empty."
+              subPath: pgdata
+
+          # ── Health checks ──────────────────────────────────────────────
+          # readinessProbe: Is the pod ready to receive traffic?
+          # Kubernetes only sends traffic to pods that pass their readiness check.
+          # The backend waits for db to be "ready" before starting.
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "waterpulse"]
+            initialDelaySeconds: 5     # Wait 5s after container starts
+            periodSeconds: 5           # Check every 5s
+
+          # livenessProbe: Is the pod still alive?
+          # If this fails repeatedly, Kubernetes kills and restarts the pod.
+          # This catches cases where PostgreSQL is hung but the process is still running.
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "waterpulse"]
+            initialDelaySeconds: 15    # Give PostgreSQL time to fully start
+            periodSeconds: 10          # Check every 10s
+
+          # ── Resource limits ────────────────────────────────────────────
+          # requests: minimum resources guaranteed to this container
+          # limits: maximum resources this container can use
+          # Without limits, one container could starve others of CPU/memory.
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"      # 250 millicores = 0.25 CPU cores
+            limits:
+              memory: "512Mi"
+              cpu: "500m"      # 500 millicores = 0.5 CPU cores
+
+      # ── Volumes ──────────────────────────────────────────────────────
+      # Link the named volume "pgdata" to the PVC we created in db-pvc.yaml.
+      # This is what makes the data persistent across pod restarts.
+      volumes:
+        - name: pgdata
+          persistentVolumeClaim:
+            claimName: db-pvc

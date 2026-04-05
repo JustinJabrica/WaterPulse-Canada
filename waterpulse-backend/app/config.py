@@ -87,6 +87,9 @@ class Settings(BaseSettings):
     ALBERTA_REQUEST_TIMEOUT: int = 60
     WEATHER_REQUEST_TIMEOUT: int = 30
 
+    # Historical fetches return up to 10K records; needs more time than real-time
+    HISTORICAL_REQUEST_TIMEOUT: int = 180
+
     # ── Provinces and territories ──────────────────────────────────
     # Used by ECCC provider to loop through all regions
     PROVINCES: list[str] = [

@@ -1,0 +1,46 @@
+# =============================================================================
+# Service — PostgreSQL Database
+# =============================================================================
+#
+# A Service gives pods a stable network identity. Pods are ephemeral — they
+# get new IP addresses every time they restart. A Service provides a fixed
+# DNS name (db-service) that always routes to the current PostgreSQL pod.
+#
+# This is the K8s equivalent of Docker Compose's internal networking, where
+# services can reach each other by name (e.g., the backend connects to "db").
+#
+# How the backend finds the database:
+#   1. ConfigMap sets POSTGRES_HOST=db-service
+#   2. entrypoint.sh connects to db-service:5432
+#   3. Kubernetes DNS resolves "db-service" to the pod's current IP
+#   4. The Service forwards traffic to port 5432 on the PostgreSQL pod
+#
+# Service types:
+#   - ClusterIP (used here): only accessible within the cluster. The database
+#     should never be exposed to the internet.
+#   - NodePort: accessible from outside on a specific port (useful for debugging)
+#   - LoadBalancer: gets a public IP from the cloud provider
+# =============================================================================
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: db-service
+  namespace: waterpulse
+spec:
+  # selector matches pods with label "app: db" — this is how the Service
+  # knows which pod(s) to forward traffic to. Must match the labels in
+  # db-deployment.yaml's pod template.
+  selector:
+    app: db
+  ports:
+    # port: the port the Service listens on (what other pods connect to)
+    # targetPort: the port on the actual container (PostgreSQL listens on 5432)
+    # These are often the same, but they can differ.
+    - port: 5432
+      targetPort: 5432
+  # ClusterIP means this Service is only reachable from inside the cluster.
+  # The backend can reach it at db-service:5432, but it's not accessible
+  # from your host machine. This is correct — you don't want the database
+  # exposed externally.
+  type: ClusterIP

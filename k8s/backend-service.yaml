@@ -1,0 +1,27 @@
+# =============================================================================
+# Service — FastAPI Backend
+# =============================================================================
+#
+# Exposes the backend Deployment within the cluster. The Ingress resource
+# routes /api/* traffic to this Service, which forwards it to the backend pod.
+#
+# Traffic flow:
+#   Browser → localhost:80 (Ingress) → backend-service:8000 → backend pod
+#
+# This Service is also used by the frontend's NEXT_PUBLIC_API_URL when
+# requests go through the Ingress (same origin), so the browser sends
+# them to localhost:80/api/* which the Ingress routes here.
+# =============================================================================
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-service
+  namespace: waterpulse
+spec:
+  selector:
+    app: backend
+  ports:
+    - port: 8000
+      targetPort: 8000
+  type: ClusterIP

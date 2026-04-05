@@ -1,0 +1,141 @@
+# =============================================================================
+# Deployment — FastAPI Backend
+# =============================================================================
+#
+# Runs the WaterPulse FastAPI backend (Python 3.12, uvicorn). This is the
+# K8s equivalent of the `backend:` service in docker-compose.
+#
+# Startup sequence (handled by entrypoint.sh, same as docker-compose):
+#   1. Wait for PostgreSQL to accept connections (retry loop)
+#   2. Run Alembic migrations (alembic upgrade head)
+#   3. Start uvicorn on port 8000
+#
+# The image must be built and loaded into kind before deploying:
+#   docker build -t waterpulse-backend:latest ./waterpulse-backend
+#   kind load docker-image waterpulse-backend:latest --name waterpulse
+#
+# To check backend logs:
+#   kubectl logs deployment/backend -n waterpulse
+#
+# To restart after code changes:
+#   docker build -t waterpulse-backend:latest ./waterpulse-backend
+#   kind load docker-image waterpulse-backend:latest --name waterpulse
+#   kubectl rollout restart deployment/backend -n waterpulse
+# =============================================================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: waterpulse
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      containers:
+        - name: backend
+          image: waterpulse-backend:latest
+
+          # ── Image pull policy ──────────────────────────────────────────
+          # IfNotPresent: use the local image if it exists, don't try to
+          # pull from a registry. Required for kind because images are
+          # loaded locally via `kind load docker-image`.
+          # Change to "Always" when deploying to cloud with a container registry.
+          imagePullPolicy: IfNotPresent
+
+          ports:
+            - containerPort: 8000
+
+          # ── Environment: ConfigMap ─────────────────────────────────────
+          # envFrom injects ALL keys from the ConfigMap as environment
+          # variables. This is equivalent to docker-compose's env_file.
+          # The backend gets: POSTGRES_HOST, ALGORITHM, ECCC_BASE_URL, etc.
+          envFrom:
+            - configMapRef:
+                name: waterpulse-config
+
+          # ── Environment: Secrets + constructed URLs ────────────────────
+          env:
+            # Pull POSTGRES_PASSWORD from the Secret
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: waterpulse-secrets
+                  key: POSTGRES_PASSWORD
+
+            # Pull SECRET_KEY from the Secret (used for JWT signing)
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: waterpulse-secrets
+                  key: SECRET_KEY
+
+            # ── Database connection strings ──────────────────────────────
+            # These use $(POSTGRES_PASSWORD) — Kubernetes replaces this with
+            # the actual password value at pod startup. This is K8s-native
+            # variable interpolation (not shell expansion).
+            #
+            # The hostname "db-service" matches the Service name in
+            # db-service.yaml. Kubernetes DNS resolves it automatically.
+            #
+            # Two URLs because SQLAlchemy uses different drivers:
+            #   - asyncpg: for the async FastAPI application
+            #   - psycopg2: for Alembic migrations (which run synchronously)
+            - name: DATABASE_URL
+              value: "postgresql+asyncpg://waterpulse:$(POSTGRES_PASSWORD)@db-service:5432/waterpulse"
+            - name: DATABASE_URL_SYNC
+              value: "postgresql+psycopg2://waterpulse:$(POSTGRES_PASSWORD)@db-service:5432/waterpulse"
+
+          # ── Health checks ──────────────────────────────────────────────
+          #
+          # Kubernetes uses three types of probes:
+          #
+          # startupProbe: "Is the container still starting up?"
+          #   Runs first. Until it succeeds, liveness and readiness probes
+          #   are disabled. This gives the backend time to run Alembic
+          #   migrations before Kubernetes decides it's unhealthy.
+          #   failureThreshold(12) x periodSeconds(10) = 120 seconds max.
+          #
+          # readinessProbe: "Is the container ready for traffic?"
+          #   Once startup succeeds, this runs periodically. The Service
+          #   only sends traffic to pods that pass their readiness check.
+          #
+          # livenessProbe: "Is the container still alive?"
+          #   If this fails repeatedly, Kubernetes kills and restarts the pod.
+          #   Catches cases where the process is hung but not crashed.
+
+          startupProbe:
+            httpGet:
+              path: /
+              port: 8000
+            failureThreshold: 12       # 12 failures x 10s = 120s max startup
+            periodSeconds: 10
+
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8000
+            initialDelaySeconds: 60
+            periodSeconds: 15
+
+          # ── Resource limits ────────────────────────────────────────────
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"

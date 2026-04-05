@@ -1,0 +1,121 @@
+# =============================================================================
+# Deployment — Next.js Frontend
+# =============================================================================
+#
+# Runs the WaterPulse Next.js frontend in standalone mode (server.js).
+# This is the K8s equivalent of the `frontend:` service in docker-compose.
+#
+# IMPORTANT — NEXT_PUBLIC_API_URL and build-time variables:
+#   Next.js "bakes" any NEXT_PUBLIC_* variable into the JavaScript bundle at
+#   BUILD time. This means the API URL cannot be changed by setting an env var
+#   on the pod — it was already hardcoded into the JS files during `npm run build`.
+#
+#   For the K8s setup with an Ingress:
+#   - The browser accesses everything through localhost:80 (the Ingress)
+#   - The Ingress routes /api/* to the backend and /* to the frontend
+#   - So NEXT_PUBLIC_API_URL should be "" (empty) or "http://localhost"
+#   - This must be set at Docker build time via --build-arg
+#
+# The image must be built and loaded into kind before deploying:
+#   docker build -t waterpulse-frontend:latest \
+#     --build-arg NEXT_PUBLIC_API_URL=http://localhost \
+#     ./waterpulse-frontend
+#   kind load docker-image waterpulse-frontend:latest --name waterpulse
+#
+# To check frontend logs:
+#   kubectl logs deployment/frontend -n waterpulse
+#
+# To restart after code changes:
+#   docker build -t waterpulse-frontend:latest \
+#     --build-arg NEXT_PUBLIC_API_URL=http://localhost \
+#     ./waterpulse-frontend
+#   kind load docker-image waterpulse-frontend:latest --name waterpulse
+#   kubectl rollout restart deployment/frontend -n waterpulse
+# =============================================================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: waterpulse
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      containers:
+        - name: frontend
+          image: waterpulse-frontend:latest
+
+          # ── Image pull policy ──────────────────────────────────────────
+          # IfNotPresent: use the local image loaded via `kind load`.
+          # Change to "Always" when deploying to cloud with a container registry.
+          imagePullPolicy: IfNotPresent
+
+          ports:
+            - containerPort: 3000
+
+          # ── Environment variables ──────────────────────────────────────
+          # NODE_ENV=production is already set in the Dockerfile, but we
+          # set it here explicitly for clarity. The standalone Next.js
+          # server reads this to enable production optimisations.
+          #
+          # HOSTNAME=0.0.0.0 tells the Next.js server to listen on all
+          # network interfaces, not just localhost. Without this, the
+          # server would only be reachable from within the container
+          # itself — other pods (and the Ingress) couldn't connect to it.
+          env:
+            - name: NODE_ENV
+              value: "production"
+            - name: HOSTNAME
+              value: "0.0.0.0"
+
+          # ── Health checks ──────────────────────────────────────────────
+          #
+          # startupProbe: Gives the container time to start up. Until this
+          # succeeds, liveness and readiness probes are paused. Next.js
+          # standalone starts quickly, but we allow up to 60 seconds
+          # (6 failures x 10s) just in case.
+          #
+          # readinessProbe: Is the pod ready for traffic? The Ingress only
+          # sends requests to pods that pass their readiness check.
+          #
+          # livenessProbe: Is the pod still alive? If this fails repeatedly,
+          # Kubernetes kills and restarts the pod.
+
+          startupProbe:
+            httpGet:
+              path: /
+              port: 3000
+            failureThreshold: 6        # 6 failures x 10s = 60s max startup
+            periodSeconds: 10
+
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 30
+            periodSeconds: 15
+
+          # ── Resource limits ────────────────────────────────────────────
+          # Next.js standalone is lightweight — it's just a Node.js server
+          # serving pre-built pages. Lower limits than the backend.
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "250m"

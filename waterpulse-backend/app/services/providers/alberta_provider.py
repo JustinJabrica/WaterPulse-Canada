@@ -24,6 +24,9 @@ from zoneinfo import ZoneInfo
 
 import httpx
 
+# Prevents concurrent fetch_stations() race in _get_station_datasets()
+_station_cache_lock = asyncio.Lock()
+
 from app.config import settings
 from app.services.providers.base_provider import (
     BaseProvider,
@@ -366,6 +369,7 @@ class AlbertaProvider(BaseProvider):
         station_number: str,
         start_date: datetime,
         end_date: datetime,
+        client=None,
     ) -> list[NormalizedDailyMean]:
         """
         Download historical CSV for a station and compute daily means.
@@ -373,6 +377,8 @@ class AlbertaProvider(BaseProvider):
 
         Note: start_date/end_date are used for filtering the parsed CSV
         results — the CSV itself contains ~365 days of data.
+
+        If client is provided, reuses it for connection pooling.
         """
         all_means: list[NormalizedDailyMean] = []
 
@@ -382,9 +388,7 @@ class AlbertaProvider(BaseProvider):
         if not datasets:
             return []
 
-        async with httpx.AsyncClient(
-            timeout=settings.ALBERTA_REQUEST_TIMEOUT
-        ) as client:
+        async def _fetch(http_client):
             for data_key, keyword in [
                 ("flow", "flow"),
                 ("level", "water level"),
@@ -393,21 +397,39 @@ class AlbertaProvider(BaseProvider):
                 if not url:
                     continue
 
-                try:
-                    resp = await client.get(url)
-                    resp.raise_for_status()
-                    text = resp.text
-                except (httpx.HTTPError, httpx.TimeoutException) as e:
-                    logger.warning(
-                        f"Alberta historical {station_number} "
-                        f"{data_key}: {e}"
-                    )
+                # Retry up to 3 times on transient network errors
+                text = None
+                for attempt in range(3):
+                    try:
+                        resp = await http_client.get(url)
+                        resp.raise_for_status()
+                        text = resp.text
+                        break
+                    except (httpx.HTTPError, httpx.TimeoutException) as e:
+                        retryable = isinstance(e, (httpx.ConnectError, httpx.ReadError))
+                        if retryable and attempt < 2:
+                            await asyncio.sleep(1 * (attempt + 1))
+                            continue
+                        logger.warning(
+                            f"Alberta historical {station_number} "
+                            f"{data_key}: {type(e).__name__}: {e}"
+                        )
+                        break
+                if text is None:
                     continue
 
                 daily_means = self._parse_csv_to_daily_means(
                     text, station_number, data_key, start_date, end_date
                 )
                 all_means.extend(daily_means)
+
+        if client:
+            await _fetch(client)
+        else:
+            async with httpx.AsyncClient(
+                timeout=settings.ALBERTA_REQUEST_TIMEOUT
+            ) as new_client:
+                await _fetch(new_client)
 
         logger.info(
             f"Alberta: {station_number} — "
@@ -418,13 +440,10 @@ class AlbertaProvider(BaseProvider):
     async def _get_station_datasets(
         self, station_number: str
     ) -> list[dict] | None:
-        """
-        Get dataset URLs for a station. Uses a cached station list so
-        the full ListStationsAndAlerts API call only happens once per
-        provider instance, not once per station during historical sync.
-        """
-        if self._station_cache is None:
-            self._station_cache = await self.fetch_stations()
+        """Get dataset URLs for a station. Caches the station list with a lock."""
+        async with _station_cache_lock:
+            if self._station_cache is None:
+                self._station_cache = await self.fetch_stations()
         for station in self._station_cache:
             if station.station_number == station_number and station.extra:
                 return station.extra.get("datasets")
