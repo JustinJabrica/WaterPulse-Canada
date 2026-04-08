@@ -2,8 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.requests import Request
 
 from app.database import get_db
+from app.limiter import limiter
 from app.models.user import User
 from app.auth import hash_password, verify_password, set_auth_cookies, clear_auth_cookies, require_user
 from app.schemas import UserCreate, UserResponse
@@ -12,12 +14,20 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
 @router.post("/register", response_model=UserResponse, status_code=201)
+@limiter.limit("3/hour")
 async def register(
+    request: Request,
     user_data: UserCreate,
     response: Response,
     db: AsyncSession = Depends(get_db),
 ):
     """Create a new user account and set session cookies."""
+    if len(user_data.password) < 8:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password must be at least 8 characters",
+        )
+
     # Check for existing email
     result = await db.execute(select(User).where(User.email == user_data.email))
     if result.scalar_one_or_none():
@@ -50,7 +60,9 @@ async def register(
 
 
 @router.post("/login", response_model=UserResponse)
+@limiter.limit("10/minute")
 async def login(
+    request: Request,
     response: Response,
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: AsyncSession = Depends(get_db),

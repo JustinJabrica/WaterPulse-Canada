@@ -33,8 +33,10 @@ src/
 │   ├── station/[station_number]/page.js # Station detail (full page, direct URL)
 │   ├── @modal/(.)station/[station_number]/page.js  # Station detail (modal overlay)
 │   ├── @modal/default.js                # Returns null when no modal is active
-│   ├── login/page.js                    # Log in
-│   └── register/page.js                 # Create account
+│   ├── login/page.js                    # Log in (redirects if already authenticated)
+│   ├── register/page.js                 # Create account (redirects if already authenticated)
+│   ├── error.js                         # Global error boundary (catches component crashes)
+│   └── not-found.js                     # Custom 404 page (dark hero style)
 ├── components/
 │   ├── WaterPulseLogo.js    # Brand logo (horizontal, stacked, icon-only)
 │   ├── Navbar.js            # Site-wide nav, auth-aware, transparent mode
@@ -329,13 +331,37 @@ This file contains all the lookup tables and utility functions the frontend uses
 | `/` | Built | Landing page with live stats, hero, feature sections |
 | `/dashboard` | Built | Province picker (alphabetical), station cards with rating pills + outflow + capacity bars, province-scoped search with debounce, station type filter (All/River/Lake), show inactive stations toggle, active station count by type in province header, manual refresh button, infinite scroll (15 stations per page), memoized filter chains |
 | `/station/[station_number]` | Built | Full readings (flow/level/elevation/outflow), percentile bars with P25-P75 zone, capacity bar for reservoirs, weather card (temp/wind+Beaufort/AQI/UV/humidity/sunrise/sunset — fetched separately with its own loading spinner), 7-day forecast, station metadata, data source label, manual refresh button. Works as modal overlay (in-app) or full page (direct URL) |
-| `/login` | Placeholder | |
-| `/register` | Placeholder | |
+| `/login` | Built | Email/username + password form, error display, loading state, redirects authenticated users to dashboard |
+| `/register` | Built | Username, email, password with confirm, client-side validation (8 char min, match check), redirects authenticated users to dashboard |
 | `/map` | Not started | Interactive Leaflet map |
 | `/favourites` | Not started | Saved stations (auth + guest cookie fallback) |
 | `/advanced-data` | Not started | Historical data explorer |
 | `/about` | Not started | |
 | `/contact` | Not started | |
+
+## Error Handling
+
+### Global Error Boundary (`error.js`)
+
+If any component throws an unhandled error, Next.js catches it and renders the error boundary instead of a white screen. Shows the WaterPulse logo, the error message, a "Try Again" button (resets the error boundary), and a link to the dashboard.
+
+### 404 Page (`not-found.js`)
+
+Custom 404 page matching the landing page's dark navy hero style. Shows a "Page not found" message with links to the dashboard and home page.
+
+### Dashboard Error States
+
+The dashboard tracks three independent error states:
+
+- **Province loading failure** — red banner with retry button above the province picker
+- **Station loading failure** — centred error message with retry button replacing the station grid
+- **Refresh failure** — inline red banner below the controls row
+
+All errors clear automatically when the next attempt starts.
+
+### Auth Page Redirects
+
+Login and register pages check `isAuthenticated` on mount. If the user already has a valid session, they are redirected to `/dashboard` via `router.replace()` (no history entry). Pages return `null` during the auth check to prevent form flash.
 
 ## Dashboard Features
 

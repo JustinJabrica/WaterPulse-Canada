@@ -73,6 +73,9 @@ export default function DashboardPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [searchLoading, setSearchLoading] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(null);
+  const [provinceError, setProvinceError] = useState(null);
+  const [stationError, setStationError] = useState(null);
+  const [refreshError, setRefreshError] = useState(null);
 
   // ── Infinite scroll state ──
   // displayCount tracks how many cards from filteredStations to render.
@@ -89,55 +92,54 @@ export default function DashboardPage() {
   // Track whether this is the first province load (to avoid clearing a restored search)
   const isFirstLoad = useRef(true);
 
-  // ── Load provinces on mount ───────────────
-  useEffect(() => {
-    async function loadProvinces() {
-      try {
-        const data = await api.get("/api/stations/provinces");
-        // Sort alphabetically by province code
-        data.sort((a, b) => a.province_code.localeCompare(b.province_code));
-        setProvinces(data);
-        // Only auto-select if the store doesn't already have a province
-        if (!selectedProvince && data.length > 0) {
-          setSelectedProvince(data[0].province_code);
-        }
-      } catch (error) {
-        console.error("Failed to load provinces:", error);
+  // ── Load provinces (called on mount + retry) ──
+  const loadProvinces = useCallback(async () => {
+    try {
+      setProvinceError(null);
+      const data = await api.get("/api/stations/provinces");
+      data.sort((a, b) => a.province_code.localeCompare(b.province_code));
+      setProvinces(data);
+      if (!selectedProvince && data.length > 0) {
+        setSelectedProvince(data[0].province_code);
       }
+    } catch (error) {
+      console.error("Failed to load provinces:", error);
+      setProvinceError("Could not load provinces. The server may be unavailable.");
     }
-    loadProvinces();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── Load stations when province changes ───
-  useEffect(() => {
-    if (!selectedProvince) return;
+  useEffect(() => { loadProvinces(); }, [loadProvinces]);
 
-    async function loadStations() {
-      setLoading(true);
-      // Don't clear search on the first load — it was restored from the store
-      if (isFirstLoad.current) {
-        isFirstLoad.current = false;
-      } else {
-        setSearchResults(null);
-        clearSearch();
-      }
-      try {
-        const data = await api.get(
-          `/api/readings/by-province/${selectedProvince}`
-        );
-        setStations(data);
-        setLastUpdated(getLatestFetchedAt(data));
-      } catch (error) {
-        console.error("Failed to load stations:", error);
-        setStations([]);
-      } finally {
-        setLoading(false);
-      }
+  // ── Load stations when province changes ───
+  const loadStations = useCallback(async () => {
+    if (!selectedProvince) return;
+    setLoading(true);
+    setStationError(null);
+    // Don't clear search on the first load — it was restored from the store
+    if (isFirstLoad.current) {
+      isFirstLoad.current = false;
+    } else {
+      setSearchResults(null);
+      clearSearch();
     }
-    loadStations();
+    try {
+      const data = await api.get(
+        `/api/readings/by-province/${selectedProvince}`
+      );
+      setStations(data);
+      setLastUpdated(getLatestFetchedAt(data));
+    } catch (error) {
+      console.error("Failed to load stations:", error);
+      setStations([]);
+      setStationError("Could not load station data. Please try again.");
+    } finally {
+      setLoading(false);
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedProvince]);
+
+  useEffect(() => { loadStations(); }, [loadStations]);
 
   // Auto-refresh removed — the backend scheduler keeps data fresh.
   // Users can still manually refresh via the refresh button.
@@ -177,6 +179,7 @@ export default function DashboardPage() {
   const handleRefresh = useCallback(async () => {
     if (!selectedProvince || refreshing) return;
     setRefreshing(true);
+    setRefreshError(null);
     try {
       await api.post(
         `/api/readings/refresh?province=${selectedProvince}`
@@ -189,6 +192,7 @@ export default function DashboardPage() {
       setLastUpdated(getLatestFetchedAt(data));
     } catch (error) {
       console.error("Refresh failed:", error);
+      setRefreshError("Refresh failed. Please try again.");
     } finally {
       setRefreshing(false);
     }
@@ -286,6 +290,19 @@ export default function DashboardPage() {
               station readings.
             </p>
           </div>
+
+          {/* ── Province error ────────────────── */}
+          {provinceError && (
+            <div className="mb-6 px-4 py-3 rounded-lg bg-red-50 border border-red-200 flex items-center justify-between">
+              <span className="text-red-700 text-sm">{provinceError}</span>
+              <button
+                onClick={loadProvinces}
+                className="ml-4 px-3 py-1 rounded-md text-xs font-medium text-red-700 bg-red-100 hover:bg-red-200 transition-colors"
+              >
+                Retry
+              </button>
+            </div>
+          )}
 
           {/* ── Province picker ────────────────── */}
           <div className="mb-6">
@@ -393,6 +410,13 @@ export default function DashboardPage() {
             </button>
           </div>
 
+          {/* ── Refresh error ────────────────── */}
+          {refreshError && (
+            <div className="mb-4 px-4 py-2.5 rounded-lg bg-red-50 border border-red-200">
+              <span className="text-red-700 text-sm">{refreshError}</span>
+            </div>
+          )}
+
           {/* ── Province header + freshness ────── */}
           {selectedProvince && !searchResults && (
             <div className="flex items-center justify-between mb-4">
@@ -432,6 +456,16 @@ export default function DashboardPage() {
               <IconLoader className="w-6 h-6 text-[#2196f3]" />
               <span className="ml-2 text-sm text-slate-900">Loading stations...</span>
             </div>
+          ) : stationError ? (
+            <div className="flex flex-col items-center justify-center py-24">
+              <p className="text-red-700 text-sm mb-4">{stationError}</p>
+              <button
+                onClick={loadStations}
+                className="px-5 py-2.5 rounded-xl text-sm font-bold text-white bg-[#2196f3] hover:bg-[#42a5f5] transition-colors shadow-sm"
+              >
+                Retry
+              </button>
+            </div>
           ) : filteredStations.length === 0 ? (
             <div className="text-center py-24">
               <p className="text-slate-900 text-sm">
@@ -446,7 +480,7 @@ export default function DashboardPage() {
                    When showNoData is on (inactive stations visible), shows
                    "Showing all Y stations." When off, shows how many active
                    stations exist out of the total for the current filters. */}
-              <p className="text-xs text-slate-500 mb-3">
+              <p className="text-xs text-slate-900 mb-3">
                 {showNoData
                   ? `Showing all ${filteredStations.length} station${filteredStations.length !== 1 ? "s" : ""}.`
                   : `Showing ${activeFilteredCount} active station${activeFilteredCount !== 1 ? "s" : ""} of ${totalForType} total.`}

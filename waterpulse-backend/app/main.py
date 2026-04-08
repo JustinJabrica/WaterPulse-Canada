@@ -10,8 +10,12 @@ from starlette.responses import JSONResponse
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+
 from app.config import settings
 from app.database import get_db, engine, Base
+from app.limiter import limiter
 from app.models import Station, CurrentReading, HistoricalDailyMean, User, FavoriteStation
 from app.routes import stations, auth, favorites
 from app.routes.admin import router as admin_router
@@ -74,6 +78,10 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+# Rate limiting — per-IP, in-memory (swap to Redis for multi-replica AWS)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # CORS — allow the Next.js frontend to connect
 app.add_middleware(

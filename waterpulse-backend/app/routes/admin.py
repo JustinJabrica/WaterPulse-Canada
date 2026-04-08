@@ -9,8 +9,10 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.requests import Request
 
 from app.database import get_db
+from app.limiter import limiter
 from app.models.station import Station
 from app.models.reading import CurrentReading
 from app.models.historical import HistoricalDailyMean
@@ -22,7 +24,8 @@ router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 
 @router.post("/sync-stations")
-async def trigger_station_sync(db: AsyncSession = Depends(get_db)):
+@limiter.limit("5/minute")
+async def trigger_station_sync(request: Request, db: AsyncSession = Depends(get_db)):
     """
     Fetch stations from all providers and update the database.
     Run this twice per year or when stations change.
@@ -32,7 +35,8 @@ async def trigger_station_sync(db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/sync-historical")
-async def trigger_historical_sync():
+@limiter.limit("5/minute")
+async def trigger_historical_sync(request: Request):
     """
     Fetch historical daily means from all providers for all of Canada.
     This is a long-running operation — in Kubernetes, use the CronJob
@@ -43,7 +47,9 @@ async def trigger_historical_sync():
 
 
 @router.post("/refresh-readings")
+@limiter.limit("5/minute")
 async def trigger_readings_refresh(
+    request: Request,
     province: str | None = Query(None, description="Refresh only this province (e.g., AB, BC, ON)"),
     db: AsyncSession = Depends(get_db),
 ):

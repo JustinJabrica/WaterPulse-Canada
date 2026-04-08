@@ -171,6 +171,7 @@ If you prefer Docker over local setup, you can skip steps 1-4 above:
 | **APScheduler** | Background task scheduler. Runs readings refresh every 10 minutes and historical sync annually on Jan 1st, without needing a separate process like Celery. | `scheduler.py` |
 | **python-jose** | JWT (JSON Web Token) library for creating and verifying authentication tokens. | `auth.py` |
 | **bcrypt** | Password hashing library. Securely stores passwords so even if the database is compromised, passwords can't be read. | `auth.py` |
+| **slowapi** | Rate limiting for FastAPI endpoints. Per-IP limits using in-memory storage (swap to Redis for multi-replica AWS deployments). | `limiter.py`, route decorators |
 | **uvicorn** | ASGI server that actually runs the FastAPI application. It's what listens on port 8000 and passes HTTP requests to FastAPI. | Command line |
 
 ### How These Fit Together
@@ -317,6 +318,7 @@ waterpulse-backend/
 │   ├── config.py                # All configuration (loaded from .env)
 │   ├── database.py              # Database engine (pool_pre_ping, pool_recycle), session factory, Base class
 │   ├── auth.py                  # JWT, password hashing, cookie management
+│   ├── limiter.py               # Rate limiting (slowapi, in-memory; swap to Redis for AWS)
 │   ├── scheduler.py             # APScheduler (readings every 10 min, historical Jan 1st)
 │   │
 │   ├── models/                  # SQLAlchemy models (one class = one table)
@@ -1127,6 +1129,24 @@ Because cookies are sent automatically by the browser, a malicious site could tr
 #### Guest Access
 
 Most endpoints work without authentication. The `get_current_user` dependency returns `None` for guests instead of raising an error. Only routes that use `require_user` (favourites) reject unauthenticated requests.
+
+#### Password Validation
+
+Registration requires a minimum of 8 characters. This is enforced on both the frontend (client-side check before submission) and the backend (returns 400 if violated). No complexity rules — length over complexity follows current NIST guidelines.
+
+#### Rate Limiting
+
+Per-IP rate limits are enforced using `slowapi` (`limiter.py`). In-memory storage by default — swap to Redis for multi-replica AWS deployments by changing the `storage_uri` parameter.
+
+| Endpoint | Limit | Rationale |
+|---|---|---|
+| `POST /api/auth/register` | 3/hour | Prevents account spam |
+| `POST /api/auth/login` | 10/minute | Prevents brute force |
+| `POST /api/admin/sync-*` | 5/minute | Expensive external API calls |
+| `POST /api/admin/refresh-readings` | 5/minute | Expensive external API calls |
+| All other endpoints | 60/minute | General abuse prevention |
+
+When a limit is exceeded, the API returns `429 Too Many Requests`.
 
 ---
 
