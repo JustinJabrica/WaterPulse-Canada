@@ -20,6 +20,7 @@ from app.schemas import (
     BasinInfo,
     ProvinceInfo,
 )
+from app.routes.readings import _build_station_readings
 from app.services.weather_cache import get_station_weather
 
 router = APIRouter(prefix="/api/stations", tags=["stations"])
@@ -237,6 +238,44 @@ async def nearby_stations(
 
     stations_with_distance.sort(key=lambda pair: pair[1])
     return [station for station, _distance in stations_with_distance[:limit]]
+
+
+@router.get("/bbox", response_model=list[StationWithReading])
+async def stations_in_bbox(
+    min_lat: float = Query(..., description="Southern boundary latitude"),
+    max_lat: float = Query(..., description="Northern boundary latitude"),
+    min_lon: float = Query(..., description="Western boundary longitude"),
+    max_lon: float = Query(..., description="Eastern boundary longitude"),
+    province: str | None = Query(None, description="Filter by province code (e.g., AB, BC, ON)"),
+    station_type: str | None = Query(None, description="Filter by station type (R or L)"),
+    limit: int = Query(500, ge=1, le=1000, description="Maximum results to return"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return stations within a bounding box, each paired with its latest reading.
+
+    Used by the interactive map to load stations for the current viewport.
+    Only River (R) and Lake/Reservoir (L) stations are returned.
+    """
+    query = (
+        select(Station)
+        .where(
+            Station.latitude.isnot(None),
+            Station.longitude.isnot(None),
+            Station.station_type.in_(["R", "L"]),
+            Station.latitude.between(min_lat, max_lat),
+            Station.longitude.between(min_lon, max_lon),
+        )
+        .options(selectinload(Station.current_readings))
+    )
+    if province:
+        query = query.where(Station.province == province.upper())
+    if station_type:
+        query = query.where(Station.station_type == station_type.upper())
+    query = query.order_by(Station.station_number).limit(limit)
+
+    result = await db.execute(query)
+    stations = result.scalars().all()
+    return _build_station_readings(stations)
 
 
 @router.get("/{station_number}/weather", response_model=StationWeatherResponse)

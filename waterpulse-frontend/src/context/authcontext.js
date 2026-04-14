@@ -13,7 +13,7 @@
  *   const { user, isLoading, login, logout, register } = useAuth();
  */
 
-import { createContext, useContext, useState, useEffect, useCallback } from "react";
+import { createContext, useContext, useState, useEffect, useCallback, useRef } from "react";
 import api from "@/lib/api";
 
 const AuthContext = createContext(null);
@@ -21,6 +21,8 @@ const AuthContext = createContext(null);
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);       // null = guest / not loaded
   const [isLoading, setIsLoading] = useState(true); // true until first check completes
+  const [toast, setToast] = useState(null);     // { message, type } or null
+  const toastTimerRef = useRef(null);
 
   // ── Check existing session on mount ────────
   useEffect(() => {
@@ -62,16 +64,41 @@ export function AuthProvider({ children }) {
     return data;
   }, []);
 
+  // ── Toast helper ────────────────────────────
+  const showToast = useCallback((message, type = "success") => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToast({ message, type });
+    toastTimerRef.current = setTimeout(() => {
+      setToast(null);
+      toastTimerRef.current = null;
+    }, 3000);
+  }, []);
+
+  const dismissToast = useCallback(() => {
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current);
+      toastTimerRef.current = null;
+    }
+    setToast(null);
+  }, []);
+
   // ── Logout ─────────────────────────────────
-  // Backend clears the HTTPOnly cookie.
+  // Backend clears the HTTPOnly cookie. Local state is cleared
+  // regardless of whether the server call succeeds.
   const logout = useCallback(async () => {
+    let serverOk = true;
     try {
       await api.post("/api/auth/logout");
     } catch {
-      // Even if the call fails, clear local state
+      serverOk = false;
     }
     setUser(null);
-  }, []);
+    if (serverOk) {
+      showToast("You have been logged out", "success");
+    } else {
+      showToast("Logged out locally — server could not be reached", "error");
+    }
+  }, [showToast]);
 
   const value = {
     user,
@@ -80,6 +107,8 @@ export function AuthProvider({ children }) {
     login,
     register,
     logout,
+    toast,
+    dismissToast,
   };
 
   return (

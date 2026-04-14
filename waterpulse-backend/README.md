@@ -1193,6 +1193,7 @@ Station sync is NOT scheduled — it's triggered manually via the admin endpoint
 | GET | `/api/stations/basins` | List Alberta basins with station groups and counts |
 | GET | `/api/stations/search?q=bow+river&province=AB` | Search R/L stations by name (case-insensitive partial match, optional `province` filter, default limit 100) |
 | GET | `/api/stations/nearby?lat=X&lon=Y&radius=50` | Find stations within a radius in kilometres (configurable `radius` and `limit`) |
+| GET | `/api/stations/bbox?min_lat=X&max_lat=X&min_lon=X&max_lon=X` | Bounding box search for map viewport — R/L only, returns StationWithReading, limit 500 (max 1000), optional `province` and `station_type` filters |
 | GET | `/api/stations/{station_number}` | Full detail for one station |
 | GET | `/api/stations/{station_number}/current` | Station with its latest reading and rating |
 | GET | `/api/stations/{station_number}/weather` | Cached weather and AQI (fetches from Open-Meteo if stale >30 min) |

@@ -28,8 +28,15 @@ src/
 ├── app/
 │   ├── layout.js                        # Root layout, fonts, AuthProvider, modal slot
 │   ├── page.js                          # Landing page (/)
-│   ├── globals.css                      # Brand tokens, keyframes, utility classes
+│   ├── globals.css                      # Brand tokens, keyframes, utilities, MapLibre CSS
 │   ├── dashboard/page.js                # Station cards, search, province picker
+│   ├── map/
+│   │   ├── page.js                      # Map page, dynamic import, URL state sync
+│   │   ├── MapView.js                   # react-map-gl wrapper, GeoJSON layers, clustering, popups
+│   │   ├── useMapData.js                # Viewport-based bbox fetch hook (debounced)
+│   │   ├── MapFilterPanel.js            # Province dropdown, type toggle, showNoData toggle
+│   │   ├── MapLegend.js                 # Collapsible rating colour legend (bottom-right)
+│   │   └── SelectionSummaryPanel.js     # Multi-station aggregated summary sidebar
 │   ├── station/[station_number]/page.js # Station detail (full page, direct URL)
 │   ├── @modal/(.)station/[station_number]/page.js  # Station detail (modal overlay)
 │   ├── @modal/default.js                # Returns null when no modal is active
@@ -43,11 +50,14 @@ src/
 │   ├── Footer.js            # Site-wide footer with nav links + disclaimer
 │   ├── StationDetail.js     # Shared station content (readings, weather, metadata)
 │   ├── StationCard.js       # Card for list views (readings, pills, capacity bar)
-│   └── RatingPill.js        # Colour-coded rating badge
+│   ├── MapStationCard.js    # Compact popup card for map (View Details + Select buttons)
+│   ├── RatingPill.js        # Colour-coded rating badge
+│   └── Toast.js             # Auth toast notifications (success/error, auto-dismiss)
 ├── stores/
-│   └── dashboardStore.js    # Zustand — persists dashboard state across navigation
+│   ├── dashboardStore.js    # Zustand — persists dashboard state across navigation
+│   └── mapStore.js          # Zustand — viewport, filters, selection (sessionStorage persist)
 ├── context/
-│   └── authcontext.js       # AuthProvider — user state, login/register/logout
+│   └── authcontext.js       # AuthProvider — user state, login/register/logout, toast helpers
 └── lib/
     ├── api.js               # Fetch wrapper with credentials + CSRF header
     └── constants.js          # Provinces, station types, ratings, WMO codes, AQI, Beaufort
@@ -104,7 +114,10 @@ const { user, isLoading, isAuthenticated, login, register, logout } = useAuth();
 
 Uses **Zustand** for state that must survive client-side page navigations (e.g., dashboard province/search/filter selection persists when viewing a station and navigating back).
 
-Stores live in `src/stores/`. Currently in-memory only (resets on tab close), which is intentional for guest users. Cookie-based persistence for logged-in users is planned.
+Stores live in `src/stores/`.
+
+- `dashboardStore.js` — in-memory only (resets on tab close), intentional for guest users. Cookie-based persistence for logged-in users is planned.
+- `mapStore.js` — uses Zustand `persist` middleware with `sessionStorage` so map viewport, filters, and station selections survive page refreshes within the same tab. Transient API data (stations array, loading, error) is excluded from persistence.
 
 ```jsx
 import useDashboardStore from "@/stores/dashboardStore";
@@ -133,6 +146,26 @@ Think of it like a global variable that React components can subscribe to. When 
 | `showNoData` | `boolean` | `false` | Whether to show stations without current data |
 
 Actions: `setSelectedProvince()`, `setSearchQuery()`, `setTypeFilter()`, `setShowNoData()`, `clearSearch()` (resets query and filter).
+
+### Map Store (`src/stores/mapStore.js`)
+
+Persisted to `sessionStorage` via Zustand `persist` middleware. Selections and viewport survive page refresh.
+
+| State | Type | Default | Persisted | Purpose |
+|-------|------|---------|-----------|---------|
+| `viewState` | `object` | `{ latitude: 56.0, longitude: -96.0, zoom: 4 }` | Yes | Map camera position |
+| `provinceFilter` | `string \| null` | `null` | Yes | Province filter for bbox queries |
+| `typeFilter` | `string` | `"all"` | Yes | Station type filter ("all", "R", "L") |
+| `showNoData` | `boolean` | `false` | Yes | Show stations without current readings |
+| `favouritesOnly` | `boolean` | `false` | Yes | Filter to favourited stations (not yet functional) |
+| `collectionFilter` | `string \| null` | `null` | Yes | Filter by collection (not yet functional) |
+| `selectedStations` | `array` | `[]` | Yes | Multi-selection for summary panel |
+| `selectedStationNumber` | `string \| null` | `null` | Yes | Which marker popup is open |
+| `stations` | `array` | `[]` | No | Current viewport stations from API |
+| `isLoading` | `boolean` | `false` | No | Fetch in progress |
+| `error` | `string \| null` | `null` | No | Last fetch error |
+
+Actions: `setViewState()`, `setProvinceFilter()`, `setTypeFilter()`, `setShowNoData()`, `setFavouritesOnly()`, `setCollectionFilter()`, `toggleStationSelection()`, `clearSelection()`, `resetView()`.
 
 ## Station Detail — Modal Overlay and Full Page
 
@@ -262,12 +295,25 @@ Site-wide navigation bar with two modes:
 |------|---------|-----------|
 | `transparent` | `false` | When `true`, starts see-through over dark hero sections and turns solid white on scroll. When `false`, always solid (inner pages). |
 
-Auth-aware: shows "Log In / Get Started" for guests, "Dashboard / Log Out" for authenticated users.
+Auth-aware: shows Dashboard + Map links for all users. Authenticated users get a username dropdown (Profile, Log Out); guests see a single Log In button.
+
+On mobile (below `sm` breakpoint) the links collapse into a hamburger menu. Both the mobile menu and the username dropdown close when clicking outside the navbar.
 
 ```jsx
 <Navbar transparent />  {/* Landing page — over dark hero */}
 <Navbar />               {/* Inner pages — always solid */}
 ```
+
+### Toast (`src/components/Toast.js`)
+
+Auth-scoped toast notifications. Reads `toast` and `dismissToast` from `AuthContext` and renders a fixed-position card at the top of the viewport when a toast is active. Two types:
+
+- `success` — neutral white card (default)
+- `error` — red-tinted card
+
+Auto-dismisses after 3 seconds. Clicking the X dismiss button cancels the pending auto-clear timer. Triggered via `AuthContext.showToast(message, type)`; currently fires from `logout()` — "You have been logged out" on success, "Logged out locally — server could not be reached" on network failure.
+
+Rendered once at the root in `src/app/layout.js`.
 
 ### Footer (`src/components/Footer.js`)
 
@@ -333,7 +379,7 @@ This file contains all the lookup tables and utility functions the frontend uses
 | `/station/[station_number]` | Built | Full readings (flow/level/elevation/outflow), percentile bars with P25-P75 zone, capacity bar for reservoirs, weather card (temp/wind+Beaufort/AQI/UV/humidity/sunrise/sunset — fetched separately with its own loading spinner), 7-day forecast, station metadata, data source label, manual refresh button. Works as modal overlay (in-app) or full page (direct URL) |
 | `/login` | Built | Email/username + password form, error display, loading state, redirects authenticated users to dashboard |
 | `/register` | Built | Username, email, password with confirm, client-side validation (8 char min, match check), redirects authenticated users to dashboard |
-| `/map` | Not started | Interactive Leaflet map |
+| `/map` | Built | Interactive MapLibre GL JS map (CartoDB Voyager tiles), viewport-based station loading via bbox endpoint, clustered markers colour-coded by rating, multi-station selection with aggregated summary panel (avg flow/level/temp, highs/lows, dominant rating, sunrise/sunset, nearby stations), province/type/showNoData filters, rating legend, URL state sync, sessionStorage persistence |
 | `/favourites` | Not started | Saved stations (auth + guest cookie fallback) |
 | `/advanced-data` | Not started | Historical data explorer |
 | `/about` | Not started | |

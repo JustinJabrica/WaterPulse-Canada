@@ -15,6 +15,9 @@ Covers monitoring stations across all 13 provinces and territories, with water l
 **Search** — find stations by name with results showing current readings and capacity bars
 ![Search function](docs/screenshots/search%20function.png)
 
+**Interactive Map** — browse stations visually, colour-coded by rating, multi-station selection with aggregated summary
+![Interactive map](docs/screenshots/map.png)
+
 **Station Detail** — current readings, capacity gauge, weather, air quality, 7-day forecast, and station metadata
 ![Station detail - readings and weather](docs/screenshots/station%20details.png)
 ![Station detail - forecast and info](docs/screenshots/station%20details%202.png)

@@ -1,5 +1,6 @@
 import { DM_Serif_Display, Plus_Jakarta_Sans } from "next/font/google";
 import { AuthProvider } from "@/context/authcontext";
+import Toast from "@/components/Toast";
 import "./globals.css";
 
 const dmSerif = DM_Serif_Display({
@@ -28,6 +29,7 @@ export default function RootLayout({ children, modal }) {
         <AuthProvider>
           {children}
           {modal}
+          <Toast />
         </AuthProvider>
       </body>
     </html>
