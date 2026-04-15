@@ -6,7 +6,7 @@ k8s/secrets.yaml
 
 # ── Hidden folders ────────────────────────────
 .hidden/
-devplan+notes/
+DevPlan+Notes/
 
 # ── Claude Code instructions ─────────────────
 CLAUDE*.md
