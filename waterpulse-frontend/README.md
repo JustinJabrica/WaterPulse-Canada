@@ -164,8 +164,9 @@ Persisted to `sessionStorage` via Zustand `persist` middleware. Selections and v
 | `stations` | `array` | `[]` | No | Current viewport stations from API |
 | `isLoading` | `boolean` | `false` | No | Fetch in progress |
 | `error` | `string \| null` | `null` | No | Last fetch error |
+| `provinceCounts` | `array \| null` | `null` | No | Per-province totals + `with_reading` counts (from `/api/stations/provinces`, fetched once on map mount). Used to size per-province cluster markers at low zoom. |
 
-Actions: `setViewState()`, `setProvinceFilter()`, `setTypeFilter()`, `setShowNoData()`, `setFavouritesOnly()`, `setCollectionFilter()`, `toggleStationSelection()`, `clearSelection()`, `resetView()`.
+Actions: `setViewState()`, `setProvinceFilter()`, `setTypeFilter()`, `setShowNoData()`, `setFavouritesOnly()`, `setCollectionFilter()`, `setStations()`, `setIsLoading()`, `setError()`, `setProvinceCounts()`, `setSelectedStationNumber()`, `toggleStationSelection()`, `clearSelection()`, `resetView()`.
 
 ## Station Detail — Modal Overlay and Full Page
 
@@ -379,7 +380,7 @@ This file contains all the lookup tables and utility functions the frontend uses
 | `/station/[station_number]` | Built | Full readings (flow/level/elevation/outflow), percentile bars with P25-P75 zone, capacity bar for reservoirs, weather card (temp/wind+Beaufort/AQI/UV/humidity/sunrise/sunset — fetched separately with its own loading spinner), 7-day forecast, station metadata, data source label, manual refresh button. Works as modal overlay (in-app) or full page (direct URL) |
 | `/login` | Built | Email/username + password form, error display, loading state, redirects authenticated users to dashboard |
 | `/register` | Built | Username, email, password with confirm, client-side validation (8 char min, match check), redirects authenticated users to dashboard |
-| `/map` | Built | Interactive MapLibre GL JS map (CartoDB Voyager tiles), viewport-based station loading via bbox endpoint, clustered markers colour-coded by rating, multi-station selection with aggregated summary panel (avg flow/level/temp, highs/lows, dominant rating, sunrise/sunset, nearby stations), province/type/showNoData filters, rating legend, URL state sync, sessionStorage persistence |
+| `/map` | Built | Interactive MapLibre GL JS map (CartoDB Voyager tiles). Below zoom 6: a province overlay with per-province fills (unique colours), borders, labels, and a single per-province cluster marker sized by total reading count from `/api/stations/provinces`. Above zoom 6: per-station markers colour-coded by rating, with native clustering. Basemap city/town labels render above station dots (via `beforeId`). Click-to-zoom clusters, multi-station selection with aggregated summary panel (avg flow/level/temp, highs/lows, dominant rating, sunrise/sunset, nearby stations), province/type/showNoData filters, rating legend, URL state sync, sessionStorage persistence |
 | `/favourites` | Not started | Saved stations (auth + guest cookie fallback) |
 | `/advanced-data` | Not started | Historical data explorer |
 | `/about` | Not started | |

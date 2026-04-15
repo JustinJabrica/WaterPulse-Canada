@@ -30,6 +30,9 @@ const useMapStore = create(
       isLoading: false,
       error: null,
 
+      // ── Per-province totals (for cluster sizing when zoomed out) ──
+      provinceCounts: null,
+
       // ── Single popup (click a marker) ────────
       selectedStationNumber: null,
 
@@ -56,6 +59,7 @@ const useMapStore = create(
       },
       setIsLoading: (isLoading) => set({ isLoading }),
       setError: (error) => set({ error }),
+      setProvinceCounts: (provinceCounts) => set({ provinceCounts }),
       setSelectedStationNumber: (stationNumber) =>
         set({ selectedStationNumber: stationNumber }),
 

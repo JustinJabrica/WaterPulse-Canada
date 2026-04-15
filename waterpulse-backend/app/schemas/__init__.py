@@ -175,6 +175,8 @@ class ProvinceInfo(BaseModel):
     river_count: int = 0
     lake_count: int = 0
     met_count: int = 0
+    river_with_reading: int = 0
+    lake_with_reading: int = 0
 
 
 # ── User Schemas ─────────────────────────────────────────────────────

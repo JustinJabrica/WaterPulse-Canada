@@ -1,9 +1,13 @@
-import { useRef, useCallback, useMemo } from "react";
+import { useRef, useCallback, useMemo, useState } from "react";
 import Map, { Source, Layer, Popup } from "react-map-gl/maplibre";
 import useMapStore from "@/stores/mapStore";
 import useMapData from "./useMapData";
 import MapStationCard from "@/components/MapStationCard";
 import MapFilterPanel from "./MapFilterPanel";
+import { PROVINCE_BOUNDS, PROVINCE_COLOURS, PROVINCE_LABEL_ANCHORS, PROVINCES } from "@/lib/constants";
+
+// Province overlay is only active when zoomed out enough to see all of Canada.
+const PROVINCE_OVERLAY_MAX_ZOOM = 6;
 
 /* ── Marker colour mapping ───────────────────────────
    Matches RATING_CONFIG from constants.js:
@@ -30,6 +34,7 @@ const TILE_STYLE =
 const clusterLayer = {
   id: "clusters",
   type: "circle",
+  minzoom: PROVINCE_OVERLAY_MAX_ZOOM,
   filter: ["has", "point_count"],
   paint: {
     "circle-color": "#1e6ba8",
@@ -42,6 +47,7 @@ const clusterLayer = {
 const clusterCountLayer = {
   id: "cluster-count",
   type: "symbol",
+  minzoom: PROVINCE_OVERLAY_MAX_ZOOM,
   filter: ["has", "point_count"],
   layout: {
     "text-field": "{point_count_abbreviated}",
@@ -53,9 +59,107 @@ const clusterCountLayer = {
   },
 };
 
+const provinceClusterCircleLayer = {
+  id: "province-clusters",
+  type: "circle",
+  maxzoom: PROVINCE_OVERLAY_MAX_ZOOM,
+  paint: {
+    "circle-color": "#1e6ba8",
+    "circle-radius": [
+      "interpolate",
+      ["linear"],
+      ["get", "count"],
+      1, 14,
+      50, 20,
+      200, 26,
+      1000, 34,
+    ],
+    "circle-stroke-width": 2,
+    "circle-stroke-color": "#ffffff",
+  },
+};
+
+const provinceClusterCountLayer = {
+  id: "province-cluster-count",
+  type: "symbol",
+  maxzoom: PROVINCE_OVERLAY_MAX_ZOOM,
+  layout: {
+    "text-field": ["get", "countLabel"],
+    "text-size": 13,
+    "text-font": ["Open Sans Bold"],
+    "text-allow-overlap": true,
+  },
+  paint: {
+    "text-color": "#ffffff",
+  },
+};
+
+const provinceFillColour = [
+  "match",
+  ["get", "code"],
+  ...Object.entries(PROVINCE_COLOURS).flat(),
+  "#2196f3",
+];
+
+const provinceFillLayer = {
+  id: "province-fills",
+  type: "fill",
+  maxzoom: PROVINCE_OVERLAY_MAX_ZOOM,
+  paint: {
+    "fill-color": provinceFillColour,
+    "fill-opacity": [
+      "case",
+      ["boolean", ["feature-state", "hover"], false],
+      0.35,
+      0.18,
+    ],
+  },
+};
+
+const provinceBorderLayer = {
+  id: "province-borders",
+  type: "line",
+  paint: {
+    "line-color": "#1e6ba8",
+    "line-width": 1,
+    "line-opacity": 0.35,
+  },
+};
+
+const provinceLabelLayer = {
+  id: "province-labels",
+  type: "symbol",
+  source: "province-label-anchors",
+  maxzoom: PROVINCE_OVERLAY_MAX_ZOOM,
+  layout: {
+    "text-field": ["get", "name"],
+    "text-font": ["Open Sans Bold"],
+    "text-size": ["interpolate", ["linear"], ["zoom"], 2, 10, 4, 14],
+    "text-allow-overlap": false,
+    "text-padding": 4,
+    "text-anchor": "bottom",
+    "text-offset": [0, -2.8],
+  },
+  paint: {
+    "text-color": "#0d2137",
+    "text-halo-color": "rgba(255,255,255,0.9)",
+    "text-halo-width": 1.5,
+  },
+};
+
+const PROVINCE_LABEL_GEOJSON = {
+  type: "FeatureCollection",
+  features: Object.entries(PROVINCE_LABEL_ANCHORS).map(([code, coords]) => ({
+    type: "Feature",
+    geometry: { type: "Point", coordinates: coords },
+    properties: { code, name: PROVINCES[code] },
+  })),
+};
+
 const stationMarkerLayer = {
   id: "station-markers",
   type: "circle",
+  minzoom: PROVINCE_OVERLAY_MAX_ZOOM,
   filter: ["!", ["has", "point_count"]],
   paint: {
     "circle-color": [
@@ -91,6 +195,8 @@ const stationMarkerLayer = {
 
 export default function MapView() {
   const mapRef = useRef(null);
+  const hoveredProvinceRef = useRef(null);
+  const [placeLabelBeforeId, setPlaceLabelBeforeId] = useState(null);
 
   const viewState = useMapStore((s) => s.viewState);
   const setViewState = useMapStore((s) => s.setViewState);
@@ -99,10 +205,28 @@ export default function MapView() {
   const stations = useMapStore((s) => s.stations);
   const selectedStations = useMapStore((s) => s.selectedStations);
   const showNoData = useMapStore((s) => s.showNoData);
+  const typeFilter = useMapStore((s) => s.typeFilter);
+  const provinceFilter = useMapStore((s) => s.provinceFilter);
+  const provinceCounts = useMapStore((s) => s.provinceCounts);
 
   // Viewport-based data fetching — fetchForCurrentView must be called
   // from the Map's onLoad to kick off the first fetch once the map is ready.
   const { fetchForCurrentView } = useMapData(mapRef);
+
+  // On map load, find the first `place_*` symbol layer in the basemap style
+  // so we can insert our station cluster/marker layers BEFORE it. That way
+  // city/town labels from the basemap render above our station circles.
+  const handleMapLoad = useCallback(() => {
+    const map = mapRef.current?.getMap();
+    if (map) {
+      const layers = map.getStyle()?.layers || [];
+      const firstPlaceLabel = layers.find(
+        (l) => l.type === "symbol" && typeof l.id === "string" && l.id.startsWith("place_")
+      );
+      if (firstPlaceLabel) setPlaceLabelBeforeId(firstPlaceLabel.id);
+    }
+    fetchForCurrentView();
+  }, [fetchForCurrentView]);
 
   /* ── Build GeoJSON from stations ───────────────── */
   const selectedSet = useMemo(
@@ -115,6 +239,43 @@ export default function MapView() {
     () => showNoData ? stations : stations.filter((s) => s.latest_reading != null),
     [stations, showNoData]
   );
+
+  // Per-province cluster markers use the lightweight /provinces endpoint
+  // (fetched once on mount) so counts reflect all stations in the province,
+  // not just whatever happens to be loaded in the current viewport. Falls
+  // back to empty until the counts request resolves.
+  const provinceAggregateGeojson = useMemo(() => {
+    if (!provinceCounts) return { type: "FeatureCollection", features: [] };
+    const features = [];
+    for (const p of provinceCounts) {
+      if (provinceFilter && p.province_code !== provinceFilter) continue;
+      const anchor = PROVINCE_LABEL_ANCHORS[p.province_code];
+      if (!anchor) continue;
+
+      let count;
+      if (typeFilter === "R") {
+        count = showNoData ? p.river_count : p.river_with_reading;
+      } else if (typeFilter === "L") {
+        count = showNoData ? p.lake_count : p.lake_with_reading;
+      } else {
+        count = showNoData
+          ? p.river_count + p.lake_count
+          : p.river_with_reading + p.lake_with_reading;
+      }
+      if (!count) continue;
+
+      features.push({
+        type: "Feature",
+        geometry: { type: "Point", coordinates: anchor },
+        properties: {
+          code: p.province_code,
+          count,
+          countLabel: count >= 1000 ? `${(count / 1000).toFixed(1)}k` : String(count),
+        },
+      });
+    }
+    return { type: "FeatureCollection", features };
+  }, [provinceCounts, provinceFilter, typeFilter, showNoData]);
 
   const geojson = useMemo(() => ({
     type: "FeatureCollection",
@@ -186,12 +347,77 @@ export default function MapView() {
       if (markerFeatures.length > 0) {
         const stationNumber = markerFeatures[0].properties.stationNumber;
         setSelectedStationNumber(stationNumber);
-      } else {
-        setSelectedStationNumber(null);
+        return;
       }
+
+      // Province overlay — only consulted at low zoom levels.
+      // Zooms into the province's bounds but does NOT set the province
+      // filter: border-area users often want to see stations in both
+      // adjacent provinces, and they can still opt into a province
+      // filter via the dropdown.
+      if (map.getZoom() < PROVINCE_OVERLAY_MAX_ZOOM) {
+        const provinceFeatures = map.queryRenderedFeatures(event.point, {
+          layers: ["province-fills"],
+        });
+        if (provinceFeatures.length > 0) {
+          const code = provinceFeatures[0].properties.code;
+          const bounds = PROVINCE_BOUNDS[code];
+          if (bounds) {
+            map.fitBounds(
+              [
+                [bounds[0], bounds[1]],
+                [bounds[2], bounds[3]],
+              ],
+              { padding: 40, duration: 800 }
+            );
+          }
+          return;
+        }
+      }
+
+      setSelectedStationNumber(null);
     },
     [setSelectedStationNumber]
   );
+
+  /* ── Province hover feedback ──────────────────── */
+  const handleMouseMove = useCallback((event) => {
+    const map = mapRef.current?.getMap();
+    if (!map) return;
+
+    const clearHover = () => {
+      if (hoveredProvinceRef.current != null) {
+        map.setFeatureState(
+          { source: "provinces", id: hoveredProvinceRef.current },
+          { hover: false }
+        );
+        hoveredProvinceRef.current = null;
+      }
+    };
+
+    if (map.getZoom() >= PROVINCE_OVERLAY_MAX_ZOOM) {
+      clearHover();
+      return;
+    }
+
+    const features = map.queryRenderedFeatures(event.point, {
+      layers: ["province-fills"],
+    });
+    const nextId = features.length > 0 ? features[0].id : null;
+    if (nextId === hoveredProvinceRef.current) return;
+
+    clearHover();
+    if (nextId != null) {
+      map.setFeatureState(
+        { source: "provinces", id: nextId },
+        { hover: true }
+      );
+      map.getCanvas().style.cursor = "pointer";
+    } else {
+      map.getCanvas().style.cursor = "";
+    }
+    hoveredProvinceRef.current = nextId;
+  }, []);
 
   /* ── Cursor styling ────────────────────────────── */
   const handleMouseEnter = useCallback(() => {
@@ -222,14 +448,42 @@ export default function MapView() {
         ref={mapRef}
         {...viewState}
         onMove={(event) => setViewState(event.viewState)}
-        onLoad={fetchForCurrentView}
+        onLoad={handleMapLoad}
         onClick={handleMapClick}
+        onMouseMove={handleMouseMove}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
-        interactiveLayerIds={["clusters", "station-markers"]}
+        interactiveLayerIds={["clusters", "station-markers", "province-fills"]}
         mapStyle={TILE_STYLE}
         style={{ width: "100%", height: "100%" }}
       >
+        <Source
+          id="provinces"
+          type="geojson"
+          data="/provinces.geojson"
+          promoteId="code"
+        >
+          <Layer {...provinceFillLayer} />
+          <Layer {...provinceBorderLayer} />
+        </Source>
+
+        <Source
+          id="province-clusters"
+          type="geojson"
+          data={provinceAggregateGeojson}
+        >
+          <Layer {...provinceClusterCircleLayer} />
+          <Layer {...provinceClusterCountLayer} />
+        </Source>
+
+        <Source
+          id="province-label-anchors"
+          type="geojson"
+          data={PROVINCE_LABEL_GEOJSON}
+        >
+          <Layer {...provinceLabelLayer} />
+        </Source>
+
         <Source
           id="stations"
           type="geojson"
@@ -238,9 +492,9 @@ export default function MapView() {
           clusterMaxZoom={14}
           clusterRadius={50}
         >
-          <Layer {...clusterLayer} />
-          <Layer {...clusterCountLayer} />
-          <Layer {...stationMarkerLayer} />
+          <Layer {...clusterLayer} beforeId={placeLabelBeforeId || undefined} />
+          <Layer {...clusterCountLayer} beforeId={placeLabelBeforeId || undefined} />
+          <Layer {...stationMarkerLayer} beforeId={placeLabelBeforeId || undefined} />
         </Source>
 
         {popupStation && (

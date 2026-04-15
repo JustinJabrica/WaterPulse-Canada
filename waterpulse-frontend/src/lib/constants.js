@@ -16,6 +16,63 @@ export const PROVINCES = {
   NU: "Nunavut",
 };
 
+// ── Province bounding boxes (used to fly the map to a clicked province) ──
+// Derived from public/provinces.geojson; format: [minLng, minLat, maxLng, maxLat].
+
+export const PROVINCE_BOUNDS = {
+  AB: [-120.001, 49, -110.001, 59.995],
+  BC: [-138.939, 48.301, -114.035, 60.004],
+  MB: [-102.002, 49, -89.18, 60],
+  NB: [-69.04, 45.056, -63.776, 48.073],
+  NL: [-67.782, 46.613, -52.62, 60.485],
+  NS: [-66.9, 43.464, -59.81, 47.033],
+  NT: [-136.446, 59.989, -101.984, 78.754],
+  NU: [-120.665, 51.914, -61.079, 83.108],
+  ON: [-95.154, 41.913, -74.325, 56.869],
+  PE: [-64.417, 45.948, -61.971, 47.062],
+  QC: [-80.11, 44.991, -57.101, 62.592],
+  SK: [-110.001, 49, -101.367, 60],
+  YT: [-141.003, 59.995, -123.817, 69.648],
+};
+
+// ── Province label anchor points ──────────────────────────────────
+// One [lng, lat] per province at a visual mid-mass point on land, so the
+// label layer can render one label per province instead of one per polygon ring.
+
+export const PROVINCE_LABEL_ANCHORS = {
+  AB: [-115.0, 54.5],
+  BC: [-124.5, 54.0],
+  SK: [-106.0, 54.0],
+  MB: [-97.0, 54.5],
+  ON: [-85.5, 50.0],
+  QC: [-72.0, 52.0],
+  NB: [-66.5, 46.6],
+  NS: [-63.5, 45.2],
+  PE: [-63.2, 46.4],
+  NL: [-60.0, 53.5],
+  YT: [-135.5, 63.5],
+  NT: [-120.0, 65.0],
+  NU: [-90.0, 67.0],
+};
+
+// ── Province fill colours for the map overlay ─────────────────────
+
+export const PROVINCE_COLOURS = {
+  BC: "#6B2D5B",
+  AB: "#053293",
+  SK: "#4B8C1B",
+  MB: "#CD0001",
+  ON: "#8B1A2B",
+  QC: "#2B5BAE",
+  NB: "#D4A017",
+  NS: "#7BA3D4",
+  PE: "#00968C",
+  NL: "#C85A4A",
+  YT: "#1B5E20",
+  NT: "#5A8C7A",
+  NU: "#E8A82E",
+};
+
 // ── Alberta basin names (used for basin-grouped views) ──────────────
 
 export const BASIN_NAMES = {

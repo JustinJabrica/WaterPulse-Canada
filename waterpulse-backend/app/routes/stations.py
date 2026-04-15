@@ -100,12 +100,18 @@ async def list_provinces(db: AsyncSession = Depends(get_db)):
     # Only count River (R) and Lake/Reservoir (L) stations — meteorological
     # stations are excluded because the dashboard's by-province endpoint
     # only returns R and L types, so the counts here must match.
+    # LEFT JOIN on current_readings so we can also report how many stations
+    # currently have a reading (used by the map's per-province cluster sizing
+    # when the "show inactive" toggle is off).
     result = await db.execute(
         select(
             Station.province,
             Station.station_type,
-            func.count().label("count"),
+            func.count(Station.station_number).label("count"),
+            func.count(CurrentReading.station_number).label("with_reading"),
         )
+        .select_from(Station)
+        .outerjoin(CurrentReading, CurrentReading.station_number == Station.station_number)
         .where(
             Station.province.isnot(None),
             Station.station_type.in_(["R", "L"]),
@@ -117,7 +123,7 @@ async def list_provinces(db: AsyncSession = Depends(get_db)):
     # Group counts by province
     # province_code = 2-letter province abbreviation (e.g. "AB", "BC")
     province_data: dict[str, dict] = {}
-    for province_code, station_type, count in rows:
+    for province_code, station_type, count, with_reading in rows:
         if province_code not in province_data:
             province_data[province_code] = {
                 "province_code": province_code,
@@ -125,13 +131,17 @@ async def list_provinces(db: AsyncSession = Depends(get_db)):
                 "river_count": 0,
                 "lake_count": 0,
                 "met_count": 0,
+                "river_with_reading": 0,
+                "lake_with_reading": 0,
             }
         entry = province_data[province_code]
         entry["total_stations"] += count
         if station_type == "R":
             entry["river_count"] = count
+            entry["river_with_reading"] = with_reading
         elif station_type == "L":
             entry["lake_count"] = count
+            entry["lake_with_reading"] = with_reading
         elif station_type == "M":
             entry["met_count"] = count
 

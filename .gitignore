@@ -9,8 +9,8 @@ k8s/secrets.yaml
 devplan+notes/
 
 # ── Claude Code instructions ─────────────────
-CLAUDE.md
-**/CLAUDE.md
+CLAUDE*.md
+**/CLAUDE*.md
 
 # ── Error logs ───────────────────────────────
 chromebook-error-log/

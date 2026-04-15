@@ -17,6 +17,7 @@ export default function useMapData(mapRef) {
   const setStations = useMapStore((s) => s.setStations);
   const setIsLoading = useMapStore((s) => s.setIsLoading);
   const setError = useMapStore((s) => s.setError);
+  const setProvinceCounts = useMapStore((s) => s.setProvinceCounts);
 
   const [mapReady, setMapReady] = useState(false);
   const debounceTimer = useRef(null);
@@ -65,6 +66,24 @@ export default function useMapData(mapRef) {
   const fetchForCurrentView = () => {
     setMapReady(true);
   };
+
+  // One-time fetch of per-province totals (used to size cluster markers
+  // when zoomed out — independent of viewport/filters).
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get("/api/stations/provinces")
+      .then((data) => {
+        if (!cancelled) setProvinceCounts(data);
+      })
+      .catch(() => {
+        // Non-fatal — cluster markers fall back to visible-stations counts.
+      });
+    return () => {
+      cancelled = true;
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Attach moveend listener once when map is ready — never re-attaches
   useEffect(() => {

@@ -1189,7 +1189,7 @@ Station sync is NOT scheduled — it's triggered manually via the admin endpoint
 | Method | Path | Description |
 |---|---|---|
 | GET | `/api/stations/` | List all stations (filterable by `station_type`, `basin`, `catchment`, `province`) |
-| GET | `/api/stations/provinces` | List all provinces with R/L station counts (meteorological excluded) |
+| GET | `/api/stations/provinces` | List all provinces with R/L station counts plus per-type counts of stations that currently have a reading (`river_with_reading`, `lake_with_reading`). Used by the map's per-province cluster sizing. Meteorological excluded. |
 | GET | `/api/stations/basins` | List Alberta basins with station groups and counts |
 | GET | `/api/stations/search?q=bow+river&province=AB` | Search R/L stations by name (case-insensitive partial match, optional `province` filter, default limit 100) |
 | GET | `/api/stations/nearby?lat=X&lon=Y&radius=50` | Find stations within a radius in kilometres (configurable `radius` and `limit`) |
