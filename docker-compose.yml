@@ -92,7 +92,7 @@ services:
       context: ./waterpulse-backend
       dockerfile: Dockerfile
     ports:
-      - "8000:8000"     # Direct access; also proxied via Nginx at /api
+      - "8000:8000"     # Direct access; also proxied via Caddy at /api
     env_file:
       - .env     # Loads SECRET_KEY, API URLs, POSTGRES_PASSWORD, etc.
     environment:
@@ -102,6 +102,7 @@ services:
       DATABASE_URL: postgresql+asyncpg://waterpulse:${POSTGRES_PASSWORD}@db:5432/waterpulse
       DATABASE_URL_SYNC: postgresql+psycopg2://waterpulse:${POSTGRES_PASSWORD}@db:5432/waterpulse
       FRONTEND_URL: http://localhost:3000
+      COOKIE_SECURE: ${COOKIE_SECURE:-False}
     depends_on:
       db:
         condition: service_healthy    # Wait for pg_isready, not just container start
@@ -125,8 +126,8 @@ services:
   #
   # NEXT_PUBLIC_API_URL is a build argument because Next.js bakes NEXT_PUBLIC_*
   # variables into the JavaScript bundle at build time — they cannot be changed
-  # at runtime. For production behind Nginx, change this to a relative URL
-  # (e.g., "/api") so it works on any domain without rebuilding.
+  # at runtime. For production behind Caddy, set this to your domain
+  # (e.g., "https://waterpulse.ca") at build time on the VPS.
   #
   # The standalone output mode (configured in next.config.mjs) produces a
   # self-contained server.js with only the necessary node_modules, reducing
@@ -137,11 +138,11 @@ services:
       dockerfile: Dockerfile
       args:
         # This URL gets embedded into the client-side JavaScript at build time.
-        # Must go through Nginx (port 80) so browser requests stay on the same
+        # Must go through Caddy (port 80) so browser requests stay on the same
         # origin — avoids CORS issues and allows HTTPOnly cookies to work.
         NEXT_PUBLIC_API_URL: http://localhost
     ports:
-      - "3000:3000"     # Direct access; also proxied via Nginx at /
+      - "3000:3000"     # Direct access; also proxied via Caddy at /
     depends_on:
       - backend
     healthcheck:
@@ -152,31 +153,45 @@ services:
       retries: 3
       start_period: 30s
 
-  # ── Nginx Reverse Proxy ─────────────────────────────────────────────────────
-  # Routes all traffic through a single origin:
-  #   /api/*        → backend:8000  (FastAPI)
-  #   /docs         → backend:8000  (Swagger UI)
-  #   /openapi.json → backend:8000  (OpenAPI spec)
-  #   /*            → frontend:3000 (Next.js)
+  # ── Caddy Reverse Proxy ─────────────────────────────────────────────────────
+  # Single-origin entry point. Routes:
+  #   /api/*, /docs, /openapi.json → backend:8000
+  #   /*                           → frontend:3000 (Next.js)
   #
-  # This is essential for HTTPOnly cookie auth — cookies set by the backend
-  # at /api/auth/login are automatically sent on subsequent requests because
-  # everything is served from the same origin (localhost:80).
+  # Essential for HTTPOnly cookie auth — same-origin means cookies set by
+  # the backend are automatically sent on subsequent requests.
   #
-  # The config file is bind-mounted read-only (:ro) so you can edit it
-  # on the host and restart Nginx without rebuilding the image.
-  nginx:
-    image: nginx:alpine
+  # SITE_ADDRESS controls dev vs prod TLS:
+  #   Dev:  :80            plain HTTP on localhost
+  #   Prod: waterpulse.ca  Caddy auto-provisions TLS via Let's Encrypt (ACME)
+  #
+  # The Caddyfile is bind-mounted read-only so edits take effect with a
+  # container restart (no rebuild). caddy-data holds ACME certs across
+  # restarts — wiping it in production forces re-issuance (LE rate-limited).
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
     ports:
-      - "80:80"       # The unified entry point for the application
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"     # HTTP/3
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+      ACME_EMAIL: ${ACME_EMAIL:-}
     volumes:
-      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
     depends_on:
       - frontend
       - backend
 
 # ── Named Volumes ─────────────────────────────────────────────────────────────
-# pgdata: Persists PostgreSQL data files across container restarts.
-# WARNING: docker-compose down -v will DELETE this volume and all database data.
+# pgdata:       Persists PostgreSQL data files across container restarts.
+# caddy-data:   Persists ACME certs and keys across restarts.
+# caddy-config: Persists Caddy runtime config.
+# WARNING: docker-compose down -v will DELETE all volumes (DB data + TLS certs).
 volumes:
   pgdata:
+  caddy-data:
+  caddy-config:

@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     OPEN_METEO_AQI_URL: str
     READINGS_REFRESH_INTERVAL_MINUTES: int = 10
 
+    # Cookie Secure flag — True on HTTPS production, False on local HTTP
+    COOKIE_SECURE: bool = False
+
     # ── ECCC — Collection paths (constants) ────────────────────────
     # Appended to ECCC_BASE_URL. Listed here so you can see every
     # endpoint the app uses in one place.

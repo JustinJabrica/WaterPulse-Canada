@@ -40,7 +40,7 @@ def set_auth_cookies(response: Response, user_id: int) -> None:
         key="access_token",
         value=access_token,
         httponly=True,
-        secure=False,  # Set True in production (requires HTTPS)
+        secure=settings.COOKIE_SECURE,
         samesite="lax",
         max_age=max_age,
         path="/",
@@ -49,7 +49,7 @@ def set_auth_cookies(response: Response, user_id: int) -> None:
         key="csrf_token",
         value=csrf_token,
         httponly=False,  # Must be readable by JavaScript
-        secure=False,  # Set True in production
+        secure=settings.COOKIE_SECURE,
         samesite="lax",
         max_age=max_age,
         path="/",
