@@ -18,7 +18,7 @@ Next.js 16 (App Router) with JavaScript, React 19, and Tailwind CSS 4.
 ### Docker
 1. Copy `.env.example` to `.env` at the **repo root** and fill in secrets
 2. Run `docker-compose up --build` from the repo root
-3. Open http://localhost (via Nginx) or http://localhost:3000 (direct)
+3. Open http://localhost (via Caddy) or http://localhost:3000 (direct)
 
 > The Docker setup builds a production image. For live code reloading during development, use the local approach above.
 
@@ -75,7 +75,7 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 
 **Important:** `.env.local` contains configuration and should never be committed to version control. It is listed in `.gitignore` by default.
 
-> **Build-time variable:** `NEXT_PUBLIC_API_URL` is baked into the client-side JavaScript at build time (this is a Next.js behaviour for all `NEXT_PUBLIC_*` variables). It **cannot be changed at runtime** — the Docker image must be rebuilt if you need a different URL. The default is `http://localhost:8000`. For production behind Nginx, use a relative URL or the full public domain.
+> **Build-time variable:** `NEXT_PUBLIC_API_URL` is baked into the client-side JavaScript at build time (this is a Next.js behaviour for all `NEXT_PUBLIC_*` variables). It **cannot be changed at runtime** — the Docker image must be rebuilt if you need a different URL. The default is `http://localhost:8000`. For production behind Caddy, use the full public domain (e.g. `https://waterpulse.ca`).
 
 ## Authentication
 

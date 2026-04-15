@@ -3,12 +3,12 @@
 # =============================================================================
 #
 # Orchestrates 4 services: PostgreSQL, FastAPI backend, Next.js frontend,
-# and an Nginx reverse proxy that unifies them under a single origin.
+# and a Caddy reverse proxy that unifies them under a single origin.
 #
 # Quick start:
 #   1. Copy .env.example to .env and fill in secrets
 #   2. docker-compose up --build
-#   3. Open http://localhost (Nginx) or http://localhost:3000 (frontend direct)
+#   3. Open http://localhost (Caddy) or http://localhost:3000 (frontend direct)
 #
 # Environment variables:
 #   Docker Compose automatically loads ".env" from the project root and uses
@@ -16,10 +16,10 @@
 #   must exist before running docker-compose up.
 #
 # Architecture:
-#   Browser → :80 (nginx) → /api/* → backend:8000 → db:5432
+#   Browser → :80 (caddy) → /api/* → backend:8000 → db:5432
 #                          → /*    → frontend:3000
 #
-# The Nginx proxy solves the cross-origin cookie problem: in production,
+# The Caddy proxy solves the cross-origin cookie problem: in production,
 # both frontend and backend are served from a single origin, so HTTPOnly
 # cookies set by the backend are automatically sent by the browser.
 #

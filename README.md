@@ -63,15 +63,15 @@ The backend runs Alembic migrations automatically on startup. Readings refresh e
 | [`waterpulse-frontend/`](waterpulse-frontend/README.md) | Next.js app — pages, components, state management | Port 3000 |
 | [`waterpulse-backend/`](waterpulse-backend/README.md) | FastAPI app — routes, services, provider architecture | Port 8000 |
 | [`k8s/`](k8s/README.md) | Kubernetes manifests for local kind cluster (cloud-portable) | Ingress on port 80 |
-| `nginx/` | Reverse proxy config for Docker Compose | Routes `/api/*` to backend, `/*` to frontend |
-| `docker-compose.yml` | Container orchestration — db, backend, frontend, nginx | Port 80 |
+| `Caddyfile` | Reverse proxy config for Docker Compose | Routes `/api/*` to backend, `/*` to frontend; automatic TLS on prod |
+| `docker-compose.yml` | Container orchestration — db, backend, frontend, caddy | Ports 80, 443 |
 
 ## Architecture
 
 ```
 Browser (:80)
   │
-  ├── Nginx / K8s Ingress
+  ├── Caddy / K8s Ingress
   │     ├── /api/*  →  Backend (:8000)  →  PostgreSQL (:5432)
   │     │                  │
   │     │                  ├── ECCC API (api.weather.gc.ca)

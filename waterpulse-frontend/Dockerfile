@@ -15,7 +15,7 @@
 #   JavaScript bundle at BUILD time. This means:
 #   - The value CANNOT be changed at runtime — you must rebuild the image
 #   - For development: use http://localhost:8000 (direct backend access)
-#   - For production behind Nginx: use a relative URL like "" or the domain
+#   - For production behind Caddy: use the full public domain (e.g. https://waterpulse.ca)
 #   - This is a Next.js constraint, not a Docker limitation
 #
 # The standalone output mode is enabled in next.config.mjs (output: "standalone").

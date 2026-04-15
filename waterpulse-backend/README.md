@@ -1882,7 +1882,7 @@ The backend runs identically on a local kind cluster. See `k8s/README.md` in the
 | Database URL | Set in `docker-compose.yml` | Constructed in `backend-deployment.yaml` using `$(POSTGRES_PASSWORD)` K8s variable interpolation |
 | Secrets | `.env` file | `k8s/secrets.yaml` (base64-encoded, gitignored) |
 | Config | `.env` file | `k8s/configmap.yaml` (plain text, committed) |
-| Reverse proxy | Nginx container | NGINX Ingress Controller (cluster addon) |
+| Reverse proxy | Caddy container | NGINX Ingress Controller (cluster addon) |
 | Historical sync | APScheduler (inside uvicorn process) | CronJob (`job-historical-sync.yaml`) — dedicated pod |
 | Image loading | Automatic (build context) | Manual: `docker build` then `kind load docker-image` |
 
