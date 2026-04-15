@@ -1,10 +1,20 @@
 import { useRef, useCallback, useMemo, useState } from "react";
 import Map, { Source, Layer, Popup } from "react-map-gl/maplibre";
+import maplibregl from "maplibre-gl";
+import { Protocol } from "pmtiles";
+import { layers as pmLayers, namedFlavor } from "@protomaps/basemaps";
 import useMapStore from "@/stores/mapStore";
 import useMapData from "./useMapData";
 import MapStationCard from "@/components/MapStationCard";
 import MapFilterPanel from "./MapFilterPanel";
 import { PROVINCE_BOUNDS, PROVINCE_COLOURS, PROVINCE_LABEL_ANCHORS, PROVINCES } from "@/lib/constants";
+
+// Register the pmtiles:// protocol handler once at module scope so React
+// StrictMode's double-invocation in dev doesn't attempt to register twice.
+if (typeof window !== "undefined" && !window.__pmtilesRegistered) {
+  maplibregl.addProtocol("pmtiles", new Protocol().tile);
+  window.__pmtilesRegistered = true;
+}
 
 // Province overlay is only active when zoomed out enough to see all of Canada.
 const PROVINCE_OVERLAY_MAX_ZOOM = 6;
@@ -22,8 +32,57 @@ const RATING_COLOURS = {
   none: "#94a3b8",
 };
 
-const TILE_STYLE =
+// Basemap: self-hosted Protomaps PMTiles when NEXT_PUBLIC_TILES_URL is set,
+// CartoDB Voyager as fallback. The fallback keeps the /map page working on
+// fresh clones before the ~5–6 GB canada.pmtiles is downloaded.
+const PMTILES_URL = process.env.NEXT_PUBLIC_TILES_URL;
+const CARTO_FALLBACK =
   "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json";
+
+function buildMapStyle() {
+  if (!PMTILES_URL) return CARTO_FALLBACK;
+  const flavor = namedFlavor("light");
+  const base = pmLayers("protomaps", flavor);
+  // Override the default water styling so rivers and lakes read as the
+  // primary visual element — aligns with the recreational-waterways focus.
+  const tuned = base.map((l) => {
+    if (l.id === "waterway") {
+      return {
+        ...l,
+        paint: {
+          ...l.paint,
+          "line-color": "#1e6ba8",
+          "line-width": [
+            "interpolate", ["linear"], ["zoom"],
+            8, 0.8,
+            12, 2.0,
+            16, 4.0,
+          ],
+        },
+      };
+    }
+    if (l.id === "water") {
+      return { ...l, paint: { ...l.paint, "fill-color": "#cfe3f5" } };
+    }
+    return l;
+  });
+  return {
+    version: 8,
+    glyphs:
+      "https://protomaps.github.io/basemaps-assets/fonts/{fontstack}/{range}.pbf",
+    sources: {
+      protomaps: {
+        type: "vector",
+        url: `pmtiles://${PMTILES_URL}`,
+        attribution:
+          '© <a href="https://openstreetmap.org">OpenStreetMap</a>, © <a href="https://protomaps.com">Protomaps</a>',
+      },
+    },
+    layers: tuned,
+  };
+}
+
+const MAP_STYLE = buildMapStyle();
 
 /* ── MapLibre layer definitions ──────────────────────
    Three layers render on top of a single GeoJSON source:
@@ -220,8 +279,12 @@ export default function MapView() {
     const map = mapRef.current?.getMap();
     if (map) {
       const layers = map.getStyle()?.layers || [];
+      // Carto uses `place_*` layer ids; Protomaps uses `places_*`. Accept both
+      // so the beforeId insertion works against either basemap.
       const firstPlaceLabel = layers.find(
-        (l) => l.type === "symbol" && typeof l.id === "string" && l.id.startsWith("place_")
+        (l) => l.type === "symbol"
+            && typeof l.id === "string"
+            && (l.id.startsWith("place_") || l.id.startsWith("places_"))
       );
       if (firstPlaceLabel) setPlaceLabelBeforeId(firstPlaceLabel.id);
     }
@@ -454,7 +517,7 @@ export default function MapView() {
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
         interactiveLayerIds={["clusters", "station-markers", "province-fills"]}
-        mapStyle={TILE_STYLE}
+        mapStyle={MAP_STYLE}
         style={{ width: "100%", height: "100%" }}
       >
         <Source
