@@ -141,6 +141,10 @@ services:
         # Must go through Caddy (port 80) so browser requests stay on the same
         # origin — avoids CORS issues and allows HTTPOnly cookies to work.
         NEXT_PUBLIC_API_URL: http://localhost
+        # URL of the self-hosted PMTiles basemap served by Caddy. Leave blank
+        # to fall back to CartoDB Voyager (e.g. on a fresh clone without the
+        # ~5–6 GB canada.pmtiles file downloaded yet). See tiles/README.md.
+        NEXT_PUBLIC_TILES_URL: ${NEXT_PUBLIC_TILES_URL:-}
     ports:
       - "3000:3000"     # Direct access; also proxied via Caddy at /
     depends_on:
@@ -180,6 +184,7 @@ services:
       ACME_EMAIL: ${ACME_EMAIL:-}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./tiles:/srv/tiles:ro
       - caddy-data:/data
       - caddy-config:/config
     depends_on:

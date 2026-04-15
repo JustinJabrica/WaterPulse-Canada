@@ -10,13 +10,16 @@
 #   2. builder — Copy source code and run "npm run build"
 #   3. runner  — Copy only the standalone output (server.js + static assets)
 #
-# IMPORTANT: NEXT_PUBLIC_API_URL
+# IMPORTANT: NEXT_PUBLIC_* build args
 #   Next.js bakes any variable prefixed with NEXT_PUBLIC_ into the client-side
 #   JavaScript bundle at BUILD time. This means:
 #   - The value CANNOT be changed at runtime — you must rebuild the image
 #   - For development: use http://localhost:8000 (direct backend access)
 #   - For production behind Caddy: use the full public domain (e.g. https://waterpulse.ca)
 #   - This is a Next.js constraint, not a Docker limitation
+#
+#   The same rule applies to NEXT_PUBLIC_TILES_URL (self-hosted PMTiles
+#   basemap URL). Leave blank to fall back to CartoDB Voyager on /map.
 #
 # The standalone output mode is enabled in next.config.mjs (output: "standalone").
 # It produces a self-contained server.js that includes only the node_modules
@@ -51,6 +54,11 @@ COPY . .
 # Override with: docker build --build-arg NEXT_PUBLIC_API_URL=https://your-domain.com
 ARG NEXT_PUBLIC_API_URL=http://localhost:8000
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+
+# Self-hosted PMTiles basemap URL (optional). When unset, the map falls back
+# to CartoDB Voyager. See tiles/README.md at the repo root.
+ARG NEXT_PUBLIC_TILES_URL=
+ENV NEXT_PUBLIC_TILES_URL=$NEXT_PUBLIC_TILES_URL
 
 RUN npm run build
 

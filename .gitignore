@@ -70,3 +70,6 @@ waterpulse-backend/*_results.json
 /ListStationsAndAlerts.json
 Python Component Creation/*.json
 Python Component Creation/*.csv
+
+# ── PMTiles basemap (local only — 5–6 GB) ────
+/tiles/*.pmtiles
