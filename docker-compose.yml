@@ -138,9 +138,10 @@ services:
       dockerfile: Dockerfile
       args:
         # This URL gets embedded into the client-side JavaScript at build time.
-        # Must go through Caddy (port 80) so browser requests stay on the same
-        # origin — avoids CORS issues and allows HTTPOnly cookies to work.
-        NEXT_PUBLIC_API_URL: http://localhost
+        # Empty string = same-origin relative requests, so the app works from
+        # localhost, a LAN IP, or a production domain without a rebuild.
+        # Requires Caddy to front both /api/* and /* (which it does).
+        NEXT_PUBLIC_API_URL: ""
         # URL of the self-hosted PMTiles basemap served by Caddy. Leave blank
         # to fall back to CartoDB Voyager (e.g. on a fresh clone without the
         # ~5–6 GB canada.pmtiles file downloaded yet). See tiles/README.md.

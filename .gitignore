@@ -73,3 +73,13 @@ Python Component Creation/*.csv
 
 # ── PMTiles basemap (local only — 5–6 GB) ────
 /tiles/*.pmtiles
+
+# ── Cloudflare tunnel artifacts ──────────────
+# Log files from `cloudflared tunnel --url ...` run in the background
+# (see docs/cloudflare-tunnel.md). Keep the guide committed; ignore runtime output.
+tunnel.log
+*.tunnel.log
+# Named-tunnel credentials (if you ever create one via `cloudflared tunnel login`)
+.cloudflared/
+cloudflared-config.yml
+cloudflared-config.yaml

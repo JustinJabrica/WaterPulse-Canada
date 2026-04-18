@@ -39,6 +39,11 @@ const useMapStore = create(
       // ── Multi-selection (aggregated summary) ─
       selectedStations: [],
 
+      // ── User geolocation ─────────────────────
+      userLocation: null,
+      locationConsentGranted: false,
+      locationPrompted: false,
+
       // ── Actions ──────────────────────────────
       setViewState: (viewState) => set({ viewState }),
       setProvinceFilter: (province) => set({ provinceFilter: province }),
@@ -86,6 +91,12 @@ const useMapStore = create(
       /** Reset viewport to default Canada-wide view. */
       resetView: () =>
         set({ viewState: { latitude: 56.0, longitude: -96.0, zoom: 4 } }),
+
+      setUserLocation: (coords) => set({ userLocation: coords }),
+      clearUserLocation: () => set({ userLocation: null }),
+      setLocationConsentGranted: (granted) =>
+        set({ locationConsentGranted: granted }),
+      setLocationPrompted: (prompted) => set({ locationPrompted: prompted }),
     }),
     {
       name: "waterpulse-map",
@@ -104,9 +115,12 @@ const useMapStore = create(
           sessionStorage.removeItem(name);
         },
       },
-      // Only persist state that should survive refresh — not transient API data
+      // Only persist state that should survive refresh — not transient API data.
+      // viewState is intentionally excluded: it updates on every pan frame
+      // (~60/sec), and a synchronous sessionStorage write per frame saturates
+      // the main thread on iOS Safari, terminating the tab. URL state sync
+      // (?lat&lng&z in page.js) already restores the viewport on refresh.
       partialize: (state) => ({
-        viewState: state.viewState,
         provinceFilter: state.provinceFilter,
         typeFilter: state.typeFilter,
         favouritesOnly: state.favouritesOnly,
@@ -114,6 +128,8 @@ const useMapStore = create(
         showNoData: state.showNoData,
         selectedStations: state.selectedStations,
         selectedStationNumber: state.selectedStationNumber,
+        locationConsentGranted: state.locationConsentGranted,
+        locationPrompted: state.locationPrompted,
       }),
     }
   )

@@ -58,21 +58,28 @@ function useUrlStateSync() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Write to URL when state changes (after initial restore)
+  // Write to URL when state changes (after initial restore).
+  // Debounced so a pan gesture (~60 viewState updates/sec) coalesces into a
+  // single trailing replaceState call. iOS Safari rate-limits replaceState
+  // aggressively and terminates the tab when called per-frame.
   useEffect(() => {
     if (!initialised.current) return;
 
-    const params = new URLSearchParams();
-    params.set("lat", viewState.latitude.toFixed(4));
-    params.set("lng", viewState.longitude.toFixed(4));
-    params.set("z", viewState.zoom.toFixed(2));
-    if (provinceFilter) params.set("province", provinceFilter);
-    if (typeFilter !== "all") params.set("type", typeFilter);
-    if (favouritesOnly) params.set("favourites", "true");
-    if (collectionFilter) params.set("collection", collectionFilter);
+    const handle = setTimeout(() => {
+      const params = new URLSearchParams();
+      params.set("lat", viewState.latitude.toFixed(4));
+      params.set("lng", viewState.longitude.toFixed(4));
+      params.set("z", viewState.zoom.toFixed(2));
+      if (provinceFilter) params.set("province", provinceFilter);
+      if (typeFilter !== "all") params.set("type", typeFilter);
+      if (favouritesOnly) params.set("favourites", "true");
+      if (collectionFilter) params.set("collection", collectionFilter);
 
-    const url = `${window.location.pathname}?${params.toString()}`;
-    window.history.replaceState(null, "", url);
+      const url = `${window.location.pathname}?${params.toString()}`;
+      window.history.replaceState(null, "", url);
+    }, 300);
+
+    return () => clearTimeout(handle);
   }, [viewState, provinceFilter, typeFilter, favouritesOnly, collectionFilter]);
 }
 

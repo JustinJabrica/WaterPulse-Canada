@@ -1,4 +1,4 @@
-import { useRef, useCallback, useMemo, useState } from "react";
+import { useRef, useCallback, useMemo, useState, useEffect } from "react";
 import Map, { Source, Layer, Popup } from "react-map-gl/maplibre";
 import maplibregl from "maplibre-gl";
 import { Protocol } from "pmtiles";
@@ -7,6 +7,8 @@ import useMapStore from "@/stores/mapStore";
 import useMapData from "./useMapData";
 import MapStationCard from "@/components/MapStationCard";
 import MapFilterPanel from "./MapFilterPanel";
+import LocationConsentModal from "./LocationConsentModal";
+import { useAuth } from "@/context/authcontext";
 import { PROVINCE_BOUNDS, PROVINCE_COLOURS, PROVINCE_LABEL_ANCHORS, PROVINCES } from "@/lib/constants";
 
 // Register the pmtiles:// protocol handler once at module scope so React
@@ -22,7 +24,7 @@ const PROVINCE_OVERLAY_MAX_ZOOM = 6;
 /* ── Marker colour mapping ───────────────────────────
    Matches RATING_CONFIG from constants.js:
    Very Low = red, Low = amber, Average = emerald,
-   High = blue, Very High = purple, No data = slate */
+   High = blue, Very High = purple, No historical data = slate */
 const RATING_COLOURS = {
   "very low": "#ef4444",
   low: "#f59e0b",
@@ -42,29 +44,90 @@ const CARTO_FALLBACK =
 function buildMapStyle() {
   if (!PMTILES_URL) return CARTO_FALLBACK;
   const flavor = namedFlavor("light");
-  const base = pmLayers("protomaps", flavor);
+  const base = pmLayers("protomaps", flavor, { lang: "en" });
   // Override the default water styling so rivers and lakes read as the
   // primary visual element — aligns with the recreational-waterways focus.
   const tuned = base.map((l) => {
-    if (l.id === "waterway") {
-      return {
-        ...l,
-        paint: {
-          ...l.paint,
-          "line-color": "#1e6ba8",
-          "line-width": [
-            "interpolate", ["linear"], ["zoom"],
-            8, 0.8,
-            12, 2.0,
-            16, 4.0,
-          ],
-        },
-      };
+    switch (l.id) {
+      case "water":
+        return { ...l, paint: { ...l.paint, "fill-color": "#6ec5ff" } };
+      case "water_river":
+        return {
+          ...l,
+          minzoom: 9,
+          paint: {
+            ...l.paint,
+            "line-color": "#6ec5ff",
+            "line-width": [
+              "interpolate", ["exponential", 1.4], ["zoom"],
+              8, 0.8,
+              10, 1.6,
+              12, 2.8,
+              14, 4.5,
+              18, 9,
+            ],
+          },
+        };
+      case "water_stream":
+        return {
+          ...l,
+          minzoom: 10,
+          paint: {
+            ...l.paint,
+            "line-color": "#1e6ba8",
+            "line-width": [
+              "interpolate", ["linear"], ["zoom"],
+              14, 0.8,
+              18, 2.0,
+            ],
+          },
+        };
+      // River/stream labels only appear from zoom 11 so the map stays
+      // uncluttered when panning across the country.
+      case "water_waterway_label":
+        return {
+          ...l,
+          minzoom: 9,
+          layout: {
+            ...l.layout,
+            "text-font": ["Noto Sans Bold"],
+            "symbol-spacing": 150,
+            "text-size": [
+              "interpolate", ["linear"], ["zoom"],
+              9, 16,
+              12, 20,
+              15, 24,
+              17, 28,
+            ],
+          },
+          paint: {
+            ...l.paint,
+            "text-halo-width": 2,
+          },
+        };
+      case "water_label_lakes":
+        return {
+          ...l,
+          minzoom: 9,
+          layout: {
+            ...l.layout,
+            "text-font": ["Noto Sans Bold"],
+            "text-size": [
+              "interpolate", ["linear"], ["zoom"],
+              9, 16,
+              12, 20,
+              15, 24,
+              17, 28,
+            ],
+          },
+          paint: {
+            ...l.paint,
+            "text-halo-width": 2,
+          },
+        };
+      default:
+        return l;
     }
-    if (l.id === "water") {
-      return { ...l, paint: { ...l.paint, "fill-color": "#cfe3f5" } };
-    }
-    return l;
   });
   return {
     version: 8,
@@ -267,6 +330,25 @@ export default function MapView() {
   const typeFilter = useMapStore((s) => s.typeFilter);
   const provinceFilter = useMapStore((s) => s.provinceFilter);
   const provinceCounts = useMapStore((s) => s.provinceCounts);
+  const userLocation = useMapStore((s) => s.userLocation);
+  const setUserLocation = useMapStore((s) => s.setUserLocation);
+  const locationConsentGranted = useMapStore((s) => s.locationConsentGranted);
+  const setLocationConsentGranted = useMapStore((s) => s.setLocationConsentGranted);
+
+  const [consentModalOpen, setConsentModalOpen] = useState(false);
+  const [isLocating, setIsLocating] = useState(false);
+  const didAutoPromptRef = useRef(false);
+  const { showToast } = useAuth();
+
+  useEffect(() => {
+    if (didAutoPromptRef.current) return;
+    didAutoPromptRef.current = true;
+    const state = useMapStore.getState();
+    if (!state.locationPrompted && !state.locationConsentGranted) {
+      state.setLocationPrompted(true);
+      setConsentModalOpen(true);
+    }
+  }, []);
 
   // Viewport-based data fetching — fetchForCurrentView must be called
   // from the Map's onLoad to kick off the first fetch once the map is ready.
@@ -505,6 +587,70 @@ export default function MapView() {
     mapRef.current?.getMap()?.resetNorth();
   }, []);
 
+  const requestGeolocation = useCallback(() => {
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      showToast("Geolocation is not supported by your browser", "error");
+      return;
+    }
+    setIsLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        // Clear the spinner first so it resets even if any of the downstream
+        // calls (easeTo, showToast) throw for any reason.
+        setIsLocating(false);
+        const { latitude, longitude, accuracy } = position.coords;
+        setUserLocation({ latitude, longitude, accuracy });
+        mapRef.current?.getMap()?.easeTo({
+          center: [longitude, latitude],
+          zoom: 12,
+          duration: 1200,
+        });
+        showToast("Location found", "success");
+      },
+      (error) => {
+        setIsLocating(false);
+        const messages = {
+          1: "Location permission denied",
+          2: "Your location is currently unavailable",
+          3: "Timed out while requesting your location",
+        };
+        showToast(messages[error.code] || "Could not get your location", "error");
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+    );
+  }, [setUserLocation, showToast]);
+
+  const handleLocateMe = useCallback(() => {
+    if (locationConsentGranted) {
+      requestGeolocation();
+    } else {
+      setConsentModalOpen(true);
+    }
+  }, [locationConsentGranted, requestGeolocation]);
+
+  const handleConsentConfirm = useCallback(() => {
+    setLocationConsentGranted(true);
+    setConsentModalOpen(false);
+    requestGeolocation();
+  }, [setLocationConsentGranted, requestGeolocation]);
+
+  const userLocationGeojson = useMemo(() => {
+    if (!userLocation) return null;
+    return {
+      type: "FeatureCollection",
+      features: [
+        {
+          type: "Feature",
+          geometry: {
+            type: "Point",
+            coordinates: [userLocation.longitude, userLocation.latitude],
+          },
+          properties: {},
+        },
+      ],
+    };
+  }, [userLocation]);
+
   return (
     <div className="relative w-full h-full">
       <Map
@@ -560,6 +706,33 @@ export default function MapView() {
           <Layer {...stationMarkerLayer} beforeId={placeLabelBeforeId || undefined} />
         </Source>
 
+        {userLocationGeojson && (
+          <Source id="user-location" type="geojson" data={userLocationGeojson}>
+            <Layer
+              id="user-location-pulse"
+              type="circle"
+              paint={{
+                "circle-radius": 16,
+                "circle-color": "#1e6ba8",
+                "circle-opacity": 0.2,
+                "circle-stroke-color": "#1e6ba8",
+                "circle-stroke-width": 1,
+                "circle-stroke-opacity": 0.4,
+              }}
+            />
+            <Layer
+              id="user-location-dot"
+              type="circle"
+              paint={{
+                "circle-radius": 7,
+                "circle-color": "#2196f3",
+                "circle-stroke-color": "#ffffff",
+                "circle-stroke-width": 3,
+              }}
+            />
+          </Source>
+        )}
+
         {popupStation && (
           <Popup
             longitude={popupStation.longitude}
@@ -605,8 +778,37 @@ export default function MapView() {
               <line x1="12" y1="8" x2="12" y2="22" />
             </svg>
           </button>
+          <div className="h-px bg-slate-200" />
+          <button
+            onClick={handleLocateMe}
+            disabled={isLocating}
+            className="px-2.5 py-2 text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer text-sm leading-none disabled:opacity-60 disabled:cursor-wait"
+            aria-label={isLocating ? "Getting your location" : "Show my location"}
+          >
+            {isLocating ? (
+              <svg className="w-4 h-4 mx-auto animate-spin" viewBox="0 0 24 24" fill="none">
+                <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" strokeOpacity="0.25" />
+                <path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+              </svg>
+            ) : (
+              <svg className="w-4 h-4 mx-auto" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="3" />
+                <circle cx="12" cy="12" r="8" />
+                <line x1="12" y1="2" x2="12" y2="5" />
+                <line x1="12" y1="19" x2="12" y2="22" />
+                <line x1="2" y1="12" x2="5" y2="12" />
+                <line x1="19" y1="12" x2="22" y2="12" />
+              </svg>
+            )}
+          </button>
         </div>
       </div>
+
+      <LocationConsentModal
+        isOpen={consentModalOpen}
+        onConfirm={handleConsentConfirm}
+        onCancel={() => setConsentModalOpen(false)}
+      />
     </div>
   );
 }

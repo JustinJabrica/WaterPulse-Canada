@@ -32,7 +32,8 @@ WORKDIR /app
 # Copied separately from source code so this layer is cached as long as
 # requirements.txt hasn't changed. --no-cache-dir saves ~50 MB of pip cache.
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip \
+ && pip install --no-cache-dir -r requirements.txt
 
 # ── Copy Alembic configuration and migration scripts ─────────────────────────
 # alembic.ini must be in WORKDIR because it uses relative paths.

@@ -17,7 +17,7 @@ tiles/canada.pmtiles
 Install `go-pmtiles` (<https://github.com/protomaps/go-pmtiles/releases>), then:
 
 ```
-pmtiles extract https://build.protomaps.com/YYYYMMDD.pmtiles canada.pmtiles \
+pmtiles extract https://build.protomaps.com/20260101.pmtiles canada.pmtiles \
   --bbox=-141.0,41.5,-52.0,83.5
 ```
 
