@@ -136,35 +136,26 @@ function WaterRipple() {
 
 // ── Animated counter ─────────────────────────
 
-function AnimatedCounter({ target, suffix = "", duration = 2000 }) {
+function AnimatedCounter({ target, suffix = "", duration = 2000, start = true }) {
   const [count, setCount] = useState(0);
-  const ref = useRef(null);
   const hasAnimated = useRef(false);
 
   useEffect(() => {
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting && !hasAnimated.current) {
-          hasAnimated.current = true;
-          const start = performance.now();
-          const step = (now) => {
-            const elapsed = now - start;
-            const progress = Math.min(elapsed / duration, 1);
-            const eased = 1 - Math.pow(1 - progress, 3);
-            setCount(Math.floor(eased * target));
-            if (progress < 1) requestAnimationFrame(step);
-          };
-          requestAnimationFrame(step);
-        }
-      },
-      { threshold: 0.5 }
-    );
-    if (ref.current) observer.observe(ref.current);
-    return () => observer.disconnect();
-  }, [target, duration]);
+    if (!start || hasAnimated.current) return;
+    hasAnimated.current = true;
+    const t0 = performance.now();
+    const step = (now) => {
+      const elapsed = now - t0;
+      const progress = Math.min(elapsed / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      setCount(Math.floor(eased * target));
+      if (progress < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  }, [start, target, duration]);
 
   return (
-    <span ref={ref}>
+    <span>
       {count.toLocaleString()}
       {suffix}
     </span>
@@ -264,6 +255,8 @@ export default function LandingPage() {
     active: null,
     basins: null,
   });
+  const statsRef = useRef(null);
+  const [statsInView, setStatsInView] = useState(false);
 
   // ── Fetch live station count from backend ──
   useEffect(() => {
@@ -286,6 +279,23 @@ export default function LandingPage() {
     fetchStatus();
   }, []);
 
+  // Shared observer so every stat counter starts on the same frame.
+  useEffect(() => {
+    const el = statsRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting) setStatsInView(true); },
+      { threshold: 0.5 }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  const statsReady =
+    stationStats.active != null &&
+    stationStats.provinces != null &&
+    statsInView;
+
   const heroStationCount = stationStats.active ?? stationStats.total;
   const heroStationLabel = stationStats.active
     ? "active stations across Canada right now"
@@ -298,7 +308,7 @@ export default function LandingPage() {
       <Navbar transparent />
 
       {/* ━━━━━━━━━━━━━━━━ HERO ━━━━━━━━━━━━━━━━ */}
-      <header className="relative min-h-[92vh] flex items-center justify-center overflow-hidden">
+      <header className="relative min-h-[92vh] pt-20 flex items-center justify-center overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-br from-[#0d2137] via-[#12304d] to-[#0f2a44]" />
         <div
           className="absolute inset-0 opacity-[0.03]"
@@ -329,17 +339,17 @@ export default function LandingPage() {
 
           <p className="text-lg sm:text-xl text-slate-300 max-w-2xl mx-auto leading-relaxed mb-10 animate-fade-up animate-fade-up-delay-2">
             Real-time water levels, flow rates, weather, and air quality for
-            rivers, lakes, and reservoirs across Canada — live-updating every
-            five minutes while you&rsquo;re watching.
+            rivers, lakes, and reservoirs across Canada
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3 animate-fade-up animate-fade-up-delay-3">
-            <Link href="/register" className="group w-full sm:w-auto inline-flex items-center justify-center gap-2 px-7 py-3.5 rounded-xl text-sm font-bold text-white transition-all duration-200 shadow-lg bg-[#2196f3] hover:bg-[#42a5f5] shadow-blue-900/30 hover:shadow-[#2196f3]/30">
-              Create Free Account
+            <Link href="/dashboard" className="group w-full sm:w-auto inline-flex items-center justify-center gap-2 px-7 py-3.5 rounded-xl text-sm font-bold text-white bg-[#2196f3] hover:bg-[#42a5f5] shadow-lg shadow-blue-900/30 hover:shadow-[#2196f3]/30 transition-all duration-200">
+              Get Started
               <IconArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
             </Link>
-            <Link href="/dashboard" className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-7 py-3.5 rounded-xl text-sm font-semibold bg-white/10 text-white border border-white/15 hover:bg-white/15 backdrop-blur-sm transition-all duration-200">
-              Explore as Guest
+            <Link href="/register" className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-7 py-3.5 rounded-xl text-sm font-semibold bg-white/10 text-white border border-white/15 hover:bg-white/15 backdrop-blur-sm transition-all duration-200">
+              Create Free Account
+              <IconArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
             </Link>
           </div>
 
@@ -351,14 +361,14 @@ export default function LandingPage() {
       </header>
 
       {/* ━━━━━━━━━━━━━━━━ STATS BAR ━━━━━━━━━━━━━━━━ */}
-      <section className="relative -mt-8 z-20">
+      <section ref={statsRef} className="relative -mt-8 z-20">
         <div className="max-w-5xl mx-auto px-6">
           <div className="bg-white rounded-2xl shadow-xl shadow-slate-900/5 border border-slate-200/80 p-6 sm:p-8">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-6 md:gap-8 text-center">
               <div>
                 <div className="font-display text-3xl sm:text-4xl text-[#1e6ba8] mb-1">
-                  {stationStats.active != null || stationStats.total != null
-                    ? <AnimatedCounter target={stationStats.active ?? stationStats.total} />
+                  {statsReady
+                    ? <AnimatedCounter target={stationStats.active ?? stationStats.total} start={statsReady} />
                     : <span className="text-slate-300">&mdash;</span>
                   }
                 </div>
@@ -366,8 +376,8 @@ export default function LandingPage() {
               </div>
               <div>
                 <div className="font-display text-3xl sm:text-4xl text-[#1e6ba8] mb-1">
-                  {stationStats.provinces != null
-                    ? <AnimatedCounter target={stationStats.provinces} />
+                  {statsReady
+                    ? <AnimatedCounter target={stationStats.provinces} start={statsReady} />
                     : <span className="text-slate-300">&mdash;</span>
                   }
                 </div>
@@ -375,13 +385,19 @@ export default function LandingPage() {
               </div>
               <div>
                 <div className="font-display text-3xl sm:text-4xl text-[#1e6ba8] mb-1">
-                  &le; <AnimatedCounter target={10} suffix=" min" />
+                  {statsReady
+                    ? <AnimatedCounter target={5} start={statsReady} />
+                    : <span className="text-slate-300">&mdash;</span>
+                  }
                 </div>
-                <div className="text-sm text-slate-500 font-medium">Refresh Cycle</div>
+                <div className="text-sm text-slate-500 font-medium">Years of History</div>
               </div>
               <div>
                 <div className="font-display text-3xl sm:text-4xl text-[#1e6ba8] mb-1">
-                  <AnimatedCounter target={7} suffix=" day" />
+                  {statsReady
+                    ? <AnimatedCounter target={7} suffix=" day" start={statsReady} />
+                    : <span className="text-slate-300">&mdash;</span>
+                  }
                 </div>
                 <div className="text-sm text-slate-500 font-medium">Weather Forecast</div>
               </div>
@@ -447,7 +463,7 @@ export default function LandingPage() {
               icon={<IconFish />}
               title="Recreational Users"
               description="Plan your next trip with confidence. Check conditions before driving to the river — know whether levels are safe for wading, paddling is possible, or flow is too high for your activity."
-              people={["Anglers", "Kayakers", "Canoeists", "Paddle Boarders", "Rafters", "Swimmers", "Campers"]}
+              people={["Fishers", "Kayakers", "Canoeists", "Paddle Boarders", "Rafters", "Swimmers", "Campers"]}
               accent="bg-gradient-to-br from-blue-50/80 to-sky-50/60 border-blue-200/50"
               delay={0}
             />
@@ -518,8 +534,8 @@ export default function LandingPage() {
             />
             <FeatureCard
               icon={<IconClock className="w-5 h-5" />}
-              title="10-Minute Updates"
-              description="Data refreshes automatically every ten minutes around the clock. Every reading includes a timestamp so you always know how fresh the data is."
+              title="Frequent Updates"
+              description="Our system polls providers every ten minutes around the clock. How often an individual station updates depends on its source — some refresh every five minutes, others only a few times a day. Every reading includes a timestamp."
               delay={400}
             />
           </div>
