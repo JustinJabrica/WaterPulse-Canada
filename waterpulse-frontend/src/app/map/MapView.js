@@ -52,15 +52,17 @@ function buildMapStyle() {
       case "water":
         return { ...l, paint: { ...l.paint, "fill-color": "#6ec5ff" } };
       case "water_river":
+        // minzoom 10 keeps a wide view from drawing every river in northern
+        // Canada at once. At zoom 9 the line layer was hitting Firefox's slow-
+        // script timeout when fitBounds landed on a distant city.
         return {
           ...l,
-          minzoom: 9,
+          minzoom: 10,
           paint: {
             ...l.paint,
             "line-color": "#6ec5ff",
             "line-width": [
               "interpolate", ["exponential", 1.4], ["zoom"],
-              8, 0.8,
               10, 1.6,
               12, 2.8,
               14, 4.5,
@@ -69,9 +71,11 @@ function buildMapStyle() {
           },
         };
       case "water_stream":
+        // Streams must stay >= 13. Below that, the feature count across a
+        // continental viewport is enough to crash the renderer.
         return {
           ...l,
-          minzoom: 10,
+          minzoom: 13,
           paint: {
             ...l.paint,
             "line-color": "#1e6ba8",
@@ -90,7 +94,7 @@ function buildMapStyle() {
           minzoom: 9,
           layout: {
             ...l.layout,
-            "text-font": ["Noto Sans Bold"],
+            "text-font": ["Noto Sans Medium"],
             "symbol-spacing": 150,
             "text-size": [
               "interpolate", ["linear"], ["zoom"],
@@ -111,7 +115,7 @@ function buildMapStyle() {
           minzoom: 9,
           layout: {
             ...l.layout,
-            "text-font": ["Noto Sans Bold"],
+            "text-font": ["Noto Sans Medium"],
             "text-size": [
               "interpolate", ["linear"], ["zoom"],
               9, 16,
@@ -133,6 +137,9 @@ function buildMapStyle() {
     version: 8,
     glyphs:
       "https://protomaps.github.io/basemaps-assets/fonts/{fontstack}/{range}.pbf",
+    // Without a sprite the layered style references images (townspot, capital,
+    // shields, POI icons) that fail to load and spam the console.
+    sprite: "https://protomaps.github.io/basemaps-assets/sprites/v4/light",
     sources: {
       protomaps: {
         type: "vector",
@@ -174,7 +181,7 @@ const clusterCountLayer = {
   layout: {
     "text-field": "{point_count_abbreviated}",
     "text-size": 13,
-    "text-font": ["Open Sans Bold"],
+    "text-font": ["Noto Sans Medium"],
   },
   paint: {
     "text-color": "#ffffff",
@@ -208,7 +215,7 @@ const provinceClusterCountLayer = {
   layout: {
     "text-field": ["get", "countLabel"],
     "text-size": 13,
-    "text-font": ["Open Sans Bold"],
+    "text-font": ["Noto Sans Medium"],
     "text-allow-overlap": true,
   },
   paint: {
@@ -255,7 +262,7 @@ const provinceLabelLayer = {
   maxzoom: PROVINCE_OVERLAY_MAX_ZOOM,
   layout: {
     "text-field": ["get", "name"],
-    "text-font": ["Open Sans Bold"],
+    "text-font": ["Noto Sans Medium"],
     "text-size": ["interpolate", ["linear"], ["zoom"], 2, 10, 4, 14],
     "text-allow-overlap": false,
     "text-padding": 4,
@@ -664,6 +671,7 @@ export default function MapView() {
         onMouseLeave={handleMouseLeave}
         interactiveLayerIds={["clusters", "station-markers", "province-fills"]}
         mapStyle={MAP_STYLE}
+        maxZoom={15}
         style={{ width: "100%", height: "100%" }}
       >
         <Source
@@ -698,7 +706,7 @@ export default function MapView() {
           type="geojson"
           data={geojson}
           cluster={true}
-          clusterMaxZoom={14}
+          clusterMaxZoom={13}
           clusterRadius={50}
         >
           <Layer {...clusterLayer} beforeId={placeLabelBeforeId || undefined} />
@@ -749,7 +757,7 @@ export default function MapView() {
 
       {/* Left column — filter panel + navigation controls */}
       <div className="absolute top-3 left-3 z-10 flex flex-col items-start gap-2">
-        <MapFilterPanel />
+        <MapFilterPanel mapRef={mapRef} />
         <div className="bg-white rounded-lg shadow-md border border-slate-200 flex flex-col overflow-hidden">
           <button
             onClick={handleZoomIn}

@@ -11,6 +11,8 @@ DevPlan+Notes/
 # ── Claude Code instructions ─────────────────
 CLAUDE*.md
 **/CLAUDE*.md
+.claude/
+**/.claude/
 
 # ── Error logs ───────────────────────────────
 chromebook-error-log/

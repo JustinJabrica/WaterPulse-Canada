@@ -925,11 +925,14 @@ async with httpx.AsyncClient(timeout=60) as client:
     response.raise_for_status()  # Raises an error if HTTP status >= 400
     data = response.json()       # Parse JSON response body
 
-    # POST request (Alberta uses POST for readings)
-    response = await client.post(
-        "https://rivers.alberta.ca/DataService/WaterlevelRecords",
-        data={"stationNumber": "05AA004", "stationType": "R", "dataType": "HG"}
+    # Per-station readings JSON (URL is discovered via the station list,
+    # not constructed — see alberta_provider.py for the full pattern).
+    response = await client.get(
+        "https://rivers.alberta.ca/apps/Basins/data/figures/"
+        "river/abrivers/stationdata/R_HG_05AA004_table.json"
     )
+    response.raise_for_status()
+    data = response.json()
 ```
 
 ### The `AsyncClient` Context Manager
@@ -1004,10 +1007,15 @@ results = await asyncio.gather(*tasks, return_exceptions=True)
 - **Stations**: `GET /DataService/ListStationsAndAlerts`
   - Single request returns all 964 stations
   - Response is **triple-encoded JSON**: outer JSON contains a `stations` key with a JSON string, which when parsed contains a `WISKI_ABRivers_station_parameters` key with the actual list
-- **Readings**: `POST /DataService/WaterlevelRecords` (one per station)
-  - POST body: `stationNumber`, `stationType`, `dataType`
-  - Batched at 50 concurrent requests
-  - Response contains a time series with the latest reading at the end
+- **Readings**: `GET` per-station static JSON file
+  - URL is in each station's `datasets` array from `ListStationsAndAlerts`
+    (`dataset_description: "Most recent 5 days' data, in JSON"`)
+  - Pattern: `/apps/Basins/data/figures/river/abrivers/stationdata/{R|L}_HG_{station}_table.json`
+  - Batched at `ALBERTA_BATCH_SIZE` (default 50) concurrent requests
+  - Response shape: a single-item list whose object has `columnarray` and a `data`
+    array of `[timestamp, ...]` rows; the latest reading is the last non-null row
+  - The legacy `POST /DataService/WaterlevelRecords` endpoint started returning 500
+    globally in late April 2026 and is no longer used
 - **Historical**: CSV download per station via URLs embedded in station metadata
   - 22 header rows to skip
   - Sub-daily readings averaged to daily means by the provider

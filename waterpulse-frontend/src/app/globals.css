@@ -59,6 +59,22 @@ body {
 }
 .animate-fade-in-down { animation: fade-in-down 0.25s ease-out both; }
 
+/* Scroll-on-overflow used by the map search dropdown so long names can be
+   read without wrapping. The element sets --scroll-distance (negative px)
+   and animation-duration; the keyframe pauses at each end so it's readable. */
+@keyframes scroll-text {
+  0%, 12%   { transform: translateX(0); }
+  50%, 58%  { transform: translateX(var(--scroll-distance, 0)); }
+  96%, 100% { transform: translateX(0); }
+}
+.animate-scroll-text {
+  animation: scroll-text linear infinite;
+  will-change: transform;
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-scroll-text { animation: none; }
+}
+
 .wave-divider {
   background: repeating-linear-gradient(
     90deg,

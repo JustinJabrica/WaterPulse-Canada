@@ -3,6 +3,7 @@
 import { useState } from "react";
 import useMapStore from "@/stores/mapStore";
 import { PROVINCES } from "@/lib/constants";
+import MapSearchBar from "./MapSearchBar";
 
 const IconChevron = ({ className = "w-4 h-4", open }) => (
   <svg
@@ -42,7 +43,7 @@ const sortedProvinces = Object.entries(PROVINCES).sort(([, a], [, b]) =>
   a.localeCompare(b)
 );
 
-export default function MapFilterPanel() {
+export default function MapFilterPanel({ mapRef }) {
   const [expanded, setExpanded] = useState(false);
 
   const provinceFilter = useMapStore((s) => s.provinceFilter);
@@ -57,7 +58,9 @@ export default function MapFilterPanel() {
   const hasActiveFilters = provinceFilter !== null || typeFilter !== "all" || showNoData;
 
   return (
-    <div>
+    <div className="flex flex-col gap-2">
+      <MapSearchBar mapRef={mapRef} />
+
       {/* Toggle button */}
       <button
         onClick={() => setExpanded((prev) => !prev)}
