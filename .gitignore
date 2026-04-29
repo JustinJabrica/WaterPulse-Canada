@@ -65,6 +65,9 @@ yarn-error.log*
 waterpulse-backend/test_*.py
 waterpulse-backend/test_*.json
 waterpulse-backend/*_results.json
+waterpulse-backend/tests/
+waterpulse-backend/pytest.ini
+waterpulse-backend/requirements-dev.txt
 
 # ── Large data files ─────────────────────────
 /ListStationsAndAlerts.json

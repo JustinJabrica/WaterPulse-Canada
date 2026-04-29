@@ -157,8 +157,8 @@ Persisted to `sessionStorage` via Zustand `persist` middleware. Selections and v
 | `provinceFilter` | `string \| null` | `null` | Yes | Province filter for bbox queries |
 | `typeFilter` | `string` | `"all"` | Yes | Station type filter ("all", "R", "L") |
 | `showNoData` | `boolean` | `false` | Yes | Show stations without current readings |
-| `favouritesOnly` | `boolean` | `false` | Yes | Filter to favourited stations (not yet functional) |
-| `collectionFilter` | `string \| null` | `null` | Yes | Filter by collection (not yet functional) |
+| `favouritesOnly` | `boolean` | `false` | Yes | Filter to favourited stations (not yet functional — favourites are now per-collection, see `/collections`) |
+| `collectionFilter` | `string \| null` | `null` | Yes | Active collection id from `?collection={id}` deep-link. Consumed by `useCollectionDeepLink` in `/map/page.js` to fetch the collection and pre-select its stations on the map. |
 | `selectedStations` | `array` | `[]` | Yes | Multi-selection for summary panel |
 | `selectedStationNumber` | `string \| null` | `null` | Yes | Which marker popup is open |
 | `stations` | `array` | `[]` | No | Current viewport stations from API |
@@ -344,8 +344,9 @@ Built on an Axios instance with:
 import api from "@/lib/api";
 
 const stations = await api.get("/api/stations/");
-await api.post("/api/favorites/", { station_number: "05BH004" });
-await api.del("/api/favorites/05BH004");
+const collections = await api.get("/api/collections/");
+await api.post(`/api/collections/${id}/stations`, { station_numbers: ["05BH004"] });
+await api.del(`/api/collections/${id}/stations/05BH004`);
 ```
 
 Methods: `api.get()`, `api.post()`, `api.put()`, `api.patch()`, `api.del()`
@@ -380,8 +381,13 @@ This file contains all the lookup tables and utility functions the frontend uses
 | `/station/[station_number]` | Built | Full readings (flow/level/elevation/outflow), percentile bars with P25-P75 zone, capacity bar for reservoirs, weather card (temp/wind+Beaufort/AQI/UV/humidity/sunrise/sunset — fetched separately with its own loading spinner), 7-day forecast, station metadata, data source label, manual refresh button. Works as modal overlay (in-app) or full page (direct URL) |
 | `/login` | Built | Email/username + password form, error display, loading state, redirects authenticated users to dashboard |
 | `/register` | Built | Username, email, password with confirm, client-side validation (8 char min, match check), redirects authenticated users to dashboard |
-| `/map` | Built | Interactive MapLibre GL JS map (CartoDB Voyager tiles). Below zoom 6: a province overlay with per-province fills (unique colours), borders, labels, and a single per-province cluster marker sized by total reading count from `/api/stations/provinces`. Above zoom 6: per-station markers colour-coded by rating, with native clustering. Basemap city/town labels render above station dots (via `beforeId`). Click-to-zoom clusters, multi-station selection with aggregated summary panel (avg flow/level/temp, highs/lows, dominant rating, sunrise/sunset, nearby stations), province/type/showNoData filters, rating legend, URL state sync, sessionStorage persistence |
-| `/favourites` | Not started | Saved stations (auth + guest cookie fallback) |
+| `/map` | Built | Interactive MapLibre GL JS map (CartoDB Voyager tiles). Below zoom 6: a province overlay with per-province fills (unique colours), borders, labels, and a single per-province cluster marker sized by total reading count from `/api/stations/provinces`. Above zoom 6: per-station markers colour-coded by rating, with native clustering. Basemap city/town labels render above station dots (via `beforeId`). Click-to-zoom clusters, multi-station selection with aggregated summary panel (avg flow/level/temp, highs/lows, dominant rating, sunrise/sunset, nearby stations), "Save as Collection" link from the panel, `?collection={id}` deep-link consumer (pre-selects stations + fits bounds), province/type/showNoData filters, rating legend, URL state sync, sessionStorage persistence |
+| `/collections` | Built | Auth-required list with Mine / Shared with me / Favourited tabs. Guests see the page but each tab shows a sign-up CTA. Header has Discover and "+ New collection" buttons. |
+| `/collections/new` | Built | Create form. Reads `?stations=…&name=…` for prefill (used by the map's "Save as Collection" button). |
+| `/collections/[id]` | Built | Read-only detail with aggregation panels, station list, collaborators (visible to viewer/editor/owner), share link (owner-only). Action buttons: Favourite (auth), View on Map (when stations exist), Edit (owner+editor), Feature/Unfeature (admin-only). |
+| `/collections/[id]/edit` | Built | Owner+editor editor. Sections: Details, Stations (existing list with remove + StationPicker), Collaborators (owner-only), Share link (owner-only), Danger zone (owner-only delete). |
+| `/collections/discover` | Built | Public browse with search, province dropdown, popular-tag chips, Featured toggle. URL state synced. |
+| `/collections/share/[token]` | Built | Anonymous-friendly read-only viewer. Falls back to "Link expired" on 404. |
 | `/advanced-data` | Not started | Historical data explorer |
 | `/about` | Not started | |
 | `/contact` | Not started | |

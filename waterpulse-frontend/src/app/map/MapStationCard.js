@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import RatingPill from "@/components/RatingPill";
+import AddToCollectionMenu from "@/components/AddToCollectionMenu";
 import { STATION_TYPES } from "@/lib/constants";
 import useMapStore from "@/stores/mapStore";
 
@@ -38,7 +39,7 @@ export default function MapStationCard({ station }) {
     <div className="min-w-[240px]">
       {/* Header row */}
       <div className="flex items-start justify-between gap-2 mb-3 pr-6">
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <h3 className="font-semibold text-slate-900 text-sm leading-tight">
             {station.station_name}
           </h3>
@@ -46,6 +47,12 @@ export default function MapStationCard({ station }) {
             {station.station_number}
             {typeLabel && <span className="ml-1.5">&middot; {typeLabel}</span>}
           </p>
+        </div>
+        <div className="shrink-0 -mr-1.5">
+          <AddToCollectionMenu
+            stationNumber={station.station_number}
+            variant="sm"
+          />
         </div>
       </div>
 

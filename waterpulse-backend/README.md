@@ -326,17 +326,20 @@ waterpulse-backend/
 │   │   ├── station.py           # stations table
 │   │   ├── reading.py           # current_readings table
 │   │   ├── historical.py        # historical_daily_means table
-│   │   ├── user.py              # users table
-│   │   └── favorite.py          # favorite_stations table
+│   │   ├── weather.py           # station_weather cache table
+│   │   ├── user.py              # users table (incl. is_admin column)
+│   │   └── collection.py        # collections + collection_stations + collection_collaborators + tags + collection_tags + favourite_collections
 │   │
 │   ├── schemas/                 # Pydantic models (request/response shapes)
-│   │   └── __init__.py          # All schemas in one file
+│   │   └── __init__.py          # All schemas in one file, sectioned by domain
 │   │
 │   ├── routes/                  # API endpoint handlers
 │   │   ├── stations.py          # GET /api/stations/*
 │   │   ├── readings.py          # GET /api/readings/*
 │   │   ├── auth.py              # POST /api/auth/*
-│   │   ├── favorites.py         # /api/favorites/*
+│   │   ├── collections.py       # /api/collections/* — full CRUD + collaborators + share token + favourite + valuable toggle
+│   │   ├── users.py             # /api/users/search — username autocomplete for collaborator invite
+│   │   ├── tags.py              # /api/tags + /api/tags/popular — autocomplete and discovery filter
 │   │   └── admin.py             # /api/admin/* (sync triggers, status)
 │   │
 │   └── services/                # Business logic
@@ -518,7 +521,7 @@ Key concepts:
 - **`Mapped[float | None]`** — This column contains a float and IS nullable
 - **`mapped_column(String(20), primary_key=True)`** — Column details (type, constraints)
 - **`relationship()`** — Tells SQLAlchemy that another table has a foreign key pointing here. Not a real column — it's a convenience for loading related objects.
-- **`cascade="all, delete-orphan"`** — When a station is deleted, its readings and favourites are automatically deleted too.
+- **`cascade="all, delete-orphan"`** — When a station is deleted, its readings are automatically deleted too. Collections are user-owned; deleting a user cascades through `collections`, `collection_stations`, `collection_collaborators`, `favourite_collections`.
 
 ### The `Base` Class
 
@@ -1128,7 +1131,7 @@ Because cookies are sent automatically by the browser, a malicious site could tr
 
 #### Guest Access
 
-Most endpoints work without authentication. The `get_current_user` dependency returns `None` for guests instead of raising an error. Only routes that use `require_user` (favourites) reject unauthenticated requests.
+Most endpoints work without authentication. The `get_current_user` dependency returns `None` for guests instead of raising an error. Routes that use `require_user` (most Collections endpoints, `/api/users/search`) reject unauthenticated requests with 401. The `require_superuser` dependency (used only by `PATCH /api/collections/{id}/valuable`) additionally requires `users.is_admin`.
 
 #### Password Validation
 
@@ -1219,13 +1222,33 @@ Station sync is NOT scheduled — it's triggered manually via the admin endpoint
 | POST | `/api/auth/logout` | Clear both cookies |
 | GET | `/api/auth/me` | Return current user from cookie (or 401) |
 
-### Favourites (Auth Required)
+### Collections
+
+The legacy `/api/favorites/*` endpoints were retired in migration `0002_collections.py`. The replacement is a richer Collections data model — see `CLAUDE.md` for the full permission matrix.
 
 | Method | Path | Description |
 |---|---|---|
-| GET | `/api/favorites/` | List user's favourite stations |
-| POST | `/api/favorites/` | Add a station to favourites |
-| DELETE | `/api/favorites/{station_number}` | Remove from favourites |
+| GET | `/api/collections/` | Auth: list mine + shared-with-me + favourited (each row carries `role` and `is_favourited`) |
+| GET | `/api/collections/discover` | Public browse, filterable by `province`, `tag`, `q`, `featured`. Auth optional. |
+| GET | `/api/collections/share/{token}` | Anonymous read via opaque token. Rate-limited at 30/hour. |
+| POST | `/api/collections/` | Auth: create (body: name, description, is_public, tags, station_numbers) |
+| GET | `/api/collections/{id}` | Read (public collections allow anon; private requires owner / collaborator / superuser) |
+| PATCH | `/api/collections/{id}` | Owner + editor: name, description, tags. `is_public` mutation owner-only. |
+| DELETE | `/api/collections/{id}` | Owner; superuser-only when `is_valuable=true` |
+| POST | `/api/collections/{id}/stations` | Owner + editor: bulk add (body: `station_numbers`) |
+| DELETE | `/api/collections/{id}/stations/{station_number}` | Owner + editor |
+| POST | `/api/collections/{id}/favourite` | Auth: favourite. `DELETE` to unfavourite. |
+| POST | `/api/collections/{id}/collaborators` | Owner: invite by username (body: username, permission). `DELETE /…/{user_id}` to remove. |
+| POST | `/api/collections/{id}/share-token` | Owner: regenerate (rotates and breaks the old link). `DELETE` clears it. |
+| PATCH | `/api/collections/{id}/valuable` | Superuser-only: flip the Featured flag. |
+
+### Users / Tags
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/users/search?q={prefix}` | Auth: username autocomplete for collaborator invite (excludes self, ≤8 results) |
+| GET | `/api/tags?q={prefix}` | Tag-name prefix search for the editor's tag input |
+| GET | `/api/tags/popular` | Most-used tags across public collections, with usage counts (for the discovery filter chips) |
 
 ### Admin
 
@@ -1387,9 +1410,13 @@ Daily mean flow/level keyed by MM-DD and year for percentile calculations.
 | `value` | Float | Daily mean value |
 | `data_source` | String | Which provider supplied this data |
 
-### `users` and `favorite_stations`
+### `users`
 
-Standard user accounts with hashed passwords and a join table linking users to their saved stations. Favourites reference `station_number`.
+Standard user accounts with `id`, `email` (UNIQUE), `username` (UNIQUE), `hashed_password`, `is_admin: bool` (default false), `created_at`. The `is_admin` flag gates the superuser-only `PATCH /api/collections/{id}/valuable` route via the `require_superuser` dependency.
+
+### Collections schema
+
+Six tables back the Collections feature: `collections`, `collection_stations`, `collection_collaborators`, `tags` (uses the CITEXT extension for case-insensitive uniqueness), `collection_tags`, `favourite_collections`. The legacy `favorite_stations` table was dropped in migration `0002_collections.py`. See `CLAUDE.md` for the full schema diagram and permission matrix.
 
 ---
 

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import RatingPill from "@/components/RatingPill";
+import AddToCollectionMenu from "@/components/AddToCollectionMenu";
 import api from "@/lib/api";
 import {
   PROVINCES,
@@ -221,18 +222,23 @@ export default function StationDetail({ stationNumber, onClose, refreshButton = 
   return (
     <div>
       {/* ── Station header ────────────── */}
-      <div className="mb-8">
-        <h1 className="font-display text-2xl sm:text-3xl text-slate-900 mb-1">
-          {station.station_name}
-        </h1>
-        <p className="text-sm text-slate-900">
-          {station.station_number}
-          {typeLabel && <> &middot; {typeLabel}</>}
-          {provinceName && <> &middot; {provinceName}</>}
-          {reading?.data_source && (
-            <> &middot; Source: {DATA_SOURCES[reading.data_source] || reading.data_source}</>
-          )}
-        </p>
+      <div className="mb-8 flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <h1 className="font-display text-2xl sm:text-3xl text-slate-900 mb-1">
+            {station.station_name}
+          </h1>
+          <p className="text-sm text-slate-900">
+            {station.station_number}
+            {typeLabel && <> &middot; {typeLabel}</>}
+            {provinceName && <> &middot; {provinceName}</>}
+            {reading?.data_source && (
+              <> &middot; Source: {DATA_SOURCES[reading.data_source] || reading.data_source}</>
+            )}
+          </p>
+        </div>
+        <div className="shrink-0">
+          <AddToCollectionMenu stationNumber={station.station_number} />
+        </div>
       </div>
 
       {/* ── Refresh button ───────────── */}

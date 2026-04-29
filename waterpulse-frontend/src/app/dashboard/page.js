@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import StationCard from "@/components/StationCard";
+import FeaturedCollections from "./FeaturedCollections";
 import useDashboardStore from "@/stores/dashboardStore";
 import api from "@/lib/api";
 import { PROVINCES, STATION_TYPES } from "@/lib/constants";
@@ -449,6 +450,9 @@ export default function DashboardPage() {
               </button>
             </div>
           )}
+
+          {/* ── Featured Collections strip ────── */}
+          <FeaturedCollections />
 
           {/* ── Station grid ──────────────────── */}
           {loading ? (

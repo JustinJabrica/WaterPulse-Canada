@@ -16,8 +16,8 @@ from slowapi.errors import RateLimitExceeded
 from app.config import settings
 from app.database import get_db, engine, Base
 from app.limiter import limiter
-from app.models import Station, CurrentReading, HistoricalDailyMean, User, FavoriteStation
-from app.routes import stations, auth, favorites
+from app.models import Station, CurrentReading, HistoricalDailyMean, User
+from app.routes import stations, auth, collections, users, tags
 from app.routes.admin import router as admin_router
 from app.routes.readings import router as readings_router
 from app.scheduler import start_scheduler, stop_scheduler
@@ -64,9 +64,14 @@ class CSRFMiddleware(BaseHTTPMiddleware):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Create tables on startup, start scheduler, cleanup on shutdown."""
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    """Start scheduler on boot, stop on shutdown.
+
+    The schema is owned by Alembic — `entrypoint.sh` runs `alembic upgrade
+    head` before this lifespan ever fires, and bare-metal local dev expects
+    the same. We deliberately do NOT call `Base.metadata.create_all` here:
+    it would create tables ahead of an upcoming migration and then make the
+    migration's own CREATE TABLE fail with `relation already exists`.
+    """
     start_scheduler()
     yield
     stop_scheduler()
@@ -99,7 +104,9 @@ app.add_middleware(CSRFMiddleware)
 app.include_router(stations.router)
 app.include_router(readings_router)
 app.include_router(auth.router)
-app.include_router(favorites.router)
+app.include_router(collections.router)
+app.include_router(users.router)
+app.include_router(tags.router)
 app.include_router(admin_router)
 
 

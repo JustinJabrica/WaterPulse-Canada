@@ -85,6 +85,16 @@ export default function Navbar({ transparent = false }) {
           >
             Map
           </Link>
+          <Link
+            href="/collections"
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+              isSolid
+                ? "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                : "text-white/80 hover:text-white hover:bg-white/10"
+            }`}
+          >
+            Collections
+          </Link>
           {isAuthenticated ? (
             <div className="relative" ref={menuRef}>
               <button
@@ -164,6 +174,13 @@ export default function Navbar({ transparent = false }) {
               className="block px-4 py-2.5 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
             >
               Map
+            </Link>
+            <Link
+              href="/collections"
+              onClick={() => setMobileOpen(false)}
+              className="block px-4 py-2.5 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+            >
+              Collections
             </Link>
             {isAuthenticated ? (
               <>

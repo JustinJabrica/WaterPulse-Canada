@@ -192,6 +192,7 @@ class UserResponse(BaseModel):
     id: int
     email: str
     username: str
+    is_admin: bool = False
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -206,17 +207,118 @@ class TokenData(BaseModel):
     user_id: int | None = None
 
 
-# ── Favorite Schemas ─────────────────────────────────────────────────
+# ── Collection Schemas ───────────────────────────────────────────────
+# See app/models/collection.py and app/routes/collections.py.
 
 
-class FavoriteCreate(BaseModel):
-    station_number: str
-
-
-class FavoriteResponse(BaseModel):
+class TagSummary(BaseModel):
+    """Tag as it appears nested inside a collection response."""
     id: int
-    station_number: str
-    station_name: str
+    name: str
+
+    model_config = {"from_attributes": True}
+
+
+class TagWithCount(TagSummary):
+    """Tag in autocomplete / popular list, with usage count."""
+    collection_count: int
+
+
+class CollaboratorResponse(BaseModel):
+    user_id: int
+    username: str
+    permission: str  # 'view' | 'edit'
     added_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class CollaboratorCreate(BaseModel):
+    username: str
+    permission: str  # 'view' | 'edit'
+
+
+class CollectionStationResponse(BaseModel):
+    """Station nested inside a collection response, with latest reading."""
+    station_number: str
+    station_name: str | None = None
+    province: str | None = None
+    station_type: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
+    latest_reading: CurrentReadingResponse | None = None
+    added_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class CollectionCreate(BaseModel):
+    name: str
+    description: str | None = None
+    is_public: bool = False
+    tags: list[str] = []
+    station_numbers: list[str] = []
+
+
+class CollectionUpdate(BaseModel):
+    """Fields editors and owners can change."""
+    name: str | None = None
+    description: str | None = None
+    is_public: bool | None = None  # owner-only — enforced in route
+    tags: list[str] | None = None
+
+
+class CollectionSummary(BaseModel):
+    """Lightweight collection info for list views."""
+    id: int
+    owner_user_id: int
+    owner_username: str
+    name: str
+    description: str | None = None
+    is_public: bool
+    is_valuable: bool
+    station_count: int
+    tags: list[TagSummary] = []
+    created_at: datetime
+    updated_at: datetime
+    # Relationship to the requesting user — set by the route, not the DB
+    role: str | None = None  # 'owner' | 'editor' | 'viewer' | 'anonymous' | None
+    is_favourited: bool = False
+
+    model_config = {"from_attributes": True}
+
+
+class CollectionDetail(CollectionSummary):
+    """Full collection including stations and collaborators."""
+    stations: list[CollectionStationResponse] = []
+    collaborators: list[CollaboratorResponse] = []
+    # Only ever populated for the owner
+    share_token: str | None = None
+
+
+class StationNumberList(BaseModel):
+    """Body for bulk add-stations."""
+    station_numbers: list[str]
+
+
+class FavouriteCollectionResponse(BaseModel):
+    user_id: int
+    collection_id: int
+    added_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ShareTokenResponse(BaseModel):
+    share_token: str | None
+
+
+class UserSearchResult(BaseModel):
+    id: int
+    username: str
+
+    model_config = {"from_attributes": True}
+
+
+class ValuableUpdate(BaseModel):
+    is_valuable: bool

@@ -98,3 +98,15 @@ async def require_user(
             detail="Authentication required",
         )
     return user
+
+
+async def require_superuser(
+    user: User = Depends(require_user),
+) -> User:
+    """Dependency that requires the user to have is_admin=True."""
+    if not user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Superuser privileges required",
+        )
+    return user

@@ -12,7 +12,18 @@ from app.config import settings
 from app.database import Base
 
 # Import all models so Base.metadata includes them
-from app.models import Station, CurrentReading, HistoricalDailyMean, User, FavoriteStation  # noqa: F401
+from app.models import (  # noqa: F401
+    Station,
+    CurrentReading,
+    HistoricalDailyMean,
+    User,
+    Collection,
+    CollectionStation,
+    CollectionCollaborator,
+    Tag,
+    CollectionTag,
+    FavouriteCollection,
+)
 
 config = context.config
 

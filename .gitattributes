@@ -1,0 +1,45 @@
+# =============================================================================
+# WaterPulse — Git line-ending policy
+# =============================================================================
+# All text files commit with LF and check out with LF, regardless of the
+# committer's OS. Without this, files saved on Windows can land in the repo
+# with CRLF and break tooling that expects Unix line endings — e.g. Alembic
+# migrations failing to load inside the Linux container ("Can't locate
+# revision identified by 'XXXX'") and shell scripts refusing to execute.
+# =============================================================================
+
+# Default: let git decide what's text vs binary, normalize text to LF.
+* text=auto eol=lf
+
+# Files that MUST be LF for Linux containers and Alembic / pytest to work
+# regardless of where they were saved.
+*.sh        text eol=lf
+*.py        text eol=lf
+*.ini       text eol=lf
+*.toml      text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+Dockerfile  text eol=lf
+Caddyfile   text eol=lf
+entrypoint* text eol=lf
+
+# Frontend
+*.js        text eol=lf
+*.jsx       text eol=lf
+*.ts        text eol=lf
+*.tsx       text eol=lf
+*.json      text eol=lf
+*.css       text eol=lf
+*.md        text eol=lf
+
+# Binary assets — never normalize.
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
+*.svg       text eol=lf
+*.ico       binary
+*.pdf       binary
+*.pmtiles   binary
+*.woff      binary
+*.woff2     binary

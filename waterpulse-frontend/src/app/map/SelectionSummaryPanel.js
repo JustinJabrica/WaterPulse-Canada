@@ -1,9 +1,18 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
+import Link from "next/link";
 import useMapStore from "@/stores/mapStore";
 import RatingPill from "@/components/RatingPill";
 import api from "@/lib/api";
+import { useAuth } from "@/context/authcontext";
+import {
+  computeReadingSummary,
+  computeWeatherSummary,
+  formatTime,
+  midpoint,
+} from "@/lib/aggregateStations";
+import useStationWeatherBatch from "@/lib/useStationWeatherBatch";
 
 /* ── Inline icons ────────────────────────────── */
 
@@ -25,46 +34,6 @@ const IconLoader = ({ className = "w-4 h-4" }) => (
   </svg>
 );
 
-/* ── Helpers ─────────────────────────────────── */
-
-/** Find the mode (most frequent value) in an array of strings. */
-function mode(values) {
-  const counts = {};
-  values.forEach((v) => {
-    if (v) counts[v] = (counts[v] || 0) + 1;
-  });
-  let best = null;
-  let bestCount = 0;
-  for (const [val, count] of Object.entries(counts)) {
-    if (count > bestCount) {
-      best = val;
-      bestCount = count;
-    }
-  }
-  return best;
-}
-
-/** Format a time string (HH:MM or ISO) to a short local display. */
-function formatTime(timeStr) {
-  if (!timeStr) return null;
-  try {
-    const date = new Date(timeStr);
-    if (isNaN(date.getTime())) return timeStr;
-    return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-  } catch {
-    return timeStr;
-  }
-}
-
-/** Geographic midpoint of an array of {latitude, longitude} objects. */
-function midpoint(stations) {
-  const sum = stations.reduce(
-    (acc, s) => ({ lat: acc.lat + s.latitude, lon: acc.lon + s.longitude }),
-    { lat: 0, lon: 0 }
-  );
-  return { lat: sum.lat / stations.length, lon: sum.lon / stations.length };
-}
-
 /* ── Summary stat row ────────────────────────── */
 
 function SummaryStat({ label, value, unit, high, low, rating }) {
@@ -76,7 +45,7 @@ function SummaryStat({ label, value, unit, high, low, rating }) {
           {rating && <RatingPill rating={rating} />}
           <span className="text-sm font-semibold text-slate-900">
             {value != null ? `${value} ${unit}` : "—"}
-          </span>          
+          </span>
         </div>
       </div>
       {(high || low) && (
@@ -105,53 +74,20 @@ export default function SelectionSummaryPanel() {
   const clearSelection = useMapStore((s) => s.clearSelection);
   const setViewState = useMapStore((s) => s.setViewState);
   const viewState = useMapStore((s) => s.viewState);
+  const { isAuthenticated } = useAuth();
 
-  const [weatherCache, setWeatherCache] = useState({});
-  const [weatherLoading, setWeatherLoading] = useState(false);
+  const { weatherCache, loading: weatherLoading } =
+    useStationWeatherBatch(selectedStations);
+
   const [nearbyStations, setNearbyStations] = useState([]);
   const [nearbyLoading, setNearbyLoading] = useState(false);
 
-  // ── Fetch weather for selected stations ──────
-  useEffect(() => {
-    if (selectedStations.length === 0) return;
-
-    const toFetch = selectedStations.filter(
-      (s) => !weatherCache[s.station_number]
-    );
-    if (toFetch.length === 0) return;
-
-    let cancelled = false;
-    setWeatherLoading(true);
-
-    Promise.all(
-      toFetch.map((s) =>
-        api
-          .get(`/api/stations/${s.station_number}/weather`)
-          .then((data) => ({ stationNumber: s.station_number, data }))
-          .catch(() => ({ stationNumber: s.station_number, data: null }))
-      )
-    ).then((results) => {
-      if (cancelled) return;
-      setWeatherCache((prev) => {
-        const next = { ...prev };
-        results.forEach((r) => {
-          if (r.data) next[r.stationNumber] = r.data;
-        });
-        return next;
-      });
-      setWeatherLoading(false);
-    });
-
-    return () => { cancelled = true; };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedStations]);
-
-  // ── Fetch nearby stations ────────────────────
   const selectedNumbers = useMemo(
     () => new Set(selectedStations.map((s) => s.station_number)),
     [selectedStations]
   );
 
+  // ── Fetch nearby stations ────────────────────
   useEffect(() => {
     if (selectedStations.length === 0) {
       setNearbyStations([]);
@@ -179,128 +115,50 @@ export default function SelectionSummaryPanel() {
     return () => { cancelled = true; };
   }, [selectedStations]);
 
-  // ── Aggregate readings ───────────────────────
-  const readingSummary = useMemo(() => {
-    const withReading = selectedStations.filter((s) => s.latest_reading);
+  const readingSummary = useMemo(
+    () => computeReadingSummary(selectedStations),
+    [selectedStations]
+  );
 
-    const flows = withReading
-      .filter((s) => s.latest_reading.discharge != null)
-      .map((s) => ({ value: s.latest_reading.discharge, name: s.station_name }));
+  const weatherSummary = useMemo(
+    () => computeWeatherSummary(selectedStations, weatherCache),
+    [selectedStations, weatherCache]
+  );
 
-    // Exclude lake/reservoir stations — their elevation values are on a
-    // different scale from river water levels and would skew the average.
-    const levels = withReading
-      .filter((s) => s.station_type !== "L" && s.latest_reading.water_level != null)
-      .map((s) => ({ value: s.latest_reading.water_level, name: s.station_name }));
-
-    const flowRatings = withReading
-      .map((s) => s.latest_reading.flow_rating)
-      .filter(Boolean);
-    const levelRatings = withReading
-      .map((s) => s.latest_reading.level_rating)
-      .filter(Boolean);
-
-    const avgFlow = flows.length
-      ? (flows.reduce((sum, f) => sum + f.value, 0) / flows.length).toFixed(1)
-      : null;
-    const avgLevel = levels.length
-      ? (levels.reduce((sum, l) => sum + l.value, 0) / levels.length).toFixed(1)
-      : null;
-
-    const highFlow = flows.length ? flows.reduce((a, b) => (b.value > a.value ? b : a)) : null;
-    const lowFlow = flows.length ? flows.reduce((a, b) => (b.value < a.value ? b : a)) : null;
-    const highLevel = levels.length ? levels.reduce((a, b) => (b.value > a.value ? b : a)) : null;
-    const lowLevel = levels.length ? levels.reduce((a, b) => (b.value < a.value ? b : a)) : null;
-
-    const dominantFlowRating = mode(flowRatings);
-    const dominantLevelRating = mode(levelRatings);
-
-    return {
-      avgFlow, avgLevel,
-      highFlow: highFlow ? { value: highFlow.value.toFixed(1), name: highFlow.name } : null,
-      lowFlow: lowFlow ? { value: lowFlow.value.toFixed(1), name: lowFlow.name } : null,
-      highLevel: highLevel ? { value: highLevel.value.toFixed(1), name: highLevel.name } : null,
-      lowLevel: lowLevel ? { value: lowLevel.value.toFixed(1), name: lowLevel.name } : null,
-      dominantFlowRating,
-      dominantLevelRating,
-    };
-  }, [selectedStations]);
-
-  // ── Aggregate weather ────────────────────────
-  const weatherSummary = useMemo(() => {
-    const entries = selectedStations
-      .map((s) => weatherCache[s.station_number])
-      .filter(Boolean)
-      .map((w) => ({ current: w.weather?.current, name: w.station_number }));
-
-    const temps = entries
-      .filter((e) => e.current?.temperature_c != null)
-      .map((e) => {
-        const station = selectedStations.find((s) => s.station_number === e.name);
-        return { value: e.current.temperature_c, name: station?.station_name || e.name };
-      });
-
-    const sunrises = entries
-      .filter((e) => e.current?.sunrise)
-      .map((e) => {
-        const station = selectedStations.find((s) => s.station_number === e.name);
-        return { value: e.current.sunrise, name: station?.station_name || e.name };
-      });
-
-    const sunsets = entries
-      .filter((e) => e.current?.sunset)
-      .map((e) => {
-        const station = selectedStations.find((s) => s.station_number === e.name);
-        return { value: e.current.sunset, name: station?.station_name || e.name };
-      });
-
-    const avgTemp = temps.length
-      ? (temps.reduce((sum, t) => sum + t.value, 0) / temps.length).toFixed(1)
-      : null;
-
-    const highTemp = temps.length ? temps.reduce((a, b) => (b.value > a.value ? b : a)) : null;
-    const lowTemp = temps.length ? temps.reduce((a, b) => (b.value < a.value ? b : a)) : null;
-
-    // Earliest sunrise, latest sunset
-    const earliestSunrise = sunrises.length
-      ? sunrises.reduce((a, b) => (a.value < b.value ? a : b))
-      : null;
-    const latestSunset = sunsets.length
-      ? sunsets.reduce((a, b) => (a.value > b.value ? a : b))
-      : null;
-
-    return {
-      avgTemp,
-      highTemp: highTemp ? { value: highTemp.value.toFixed(1), name: highTemp.name } : null,
-      lowTemp: lowTemp ? { value: lowTemp.value.toFixed(1), name: lowTemp.name } : null,
-      earliestSunrise,
-      latestSunset,
-      loadedCount: entries.length,
-    };
-  }, [selectedStations, weatherCache]);
-
-  // ── Nearby stations not already selected ─────
+  // Nearby stations not already selected
   const filteredNearby = useMemo(
     () => nearbyStations.filter((s) => !selectedNumbers.has(s.station_number)),
     [nearbyStations, selectedNumbers]
   );
 
-  // Don't render if nothing selected
   if (selectedStations.length === 0) return null;
 
   return (
     <div className="absolute bottom-0 left-0 right-0 z-10 h-1/3 overflow-y-auto bg-white rounded-t-lg shadow-lg border border-slate-200 md:bottom-auto md:left-auto md:top-3 md:right-3 md:h-auto md:w-80 md:max-h-[calc(100%-24px)] md:rounded-lg">
       {/* Header */}
-      <div className="sticky top-0 bg-white border-b border-slate-100 px-4 py-3 flex items-center justify-between">
+      <div className="sticky top-0 bg-white border-b border-slate-100 px-4 py-3 flex items-center justify-between gap-2">
         <h2 className="text-sm font-semibold text-slate-900">
           Selection ({selectedStations.length})
         </h2>
-        <button
-          onClick={clearSelection}
-          className="text-xs text-red-500 hover:text-red-700 font-medium transition-colors cursor-pointer"
-        >
-          Clear All
-        </button>
+        <div className="flex items-center gap-2">
+          {isAuthenticated && (
+            <Link
+              href={`/collections/new?stations=${selectedStations
+                .map((s) => s.station_number)
+                .join(",")}`}
+              className="text-xs px-2 py-1 rounded-md bg-[#2196f3] text-white font-medium hover:bg-[#1e6ba8] transition-colors"
+              title="Save these stations as a new collection"
+            >
+              Save as Collection
+            </Link>
+          )}
+          <button
+            onClick={clearSelection}
+            className="text-xs text-red-500 hover:text-red-700 font-medium transition-colors cursor-pointer"
+          >
+            Clear All
+          </button>
+        </div>
       </div>
 
       <div className="px-4 py-3 space-y-4">

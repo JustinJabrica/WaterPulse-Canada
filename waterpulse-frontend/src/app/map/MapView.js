@@ -2,7 +2,7 @@ import { useRef, useCallback, useMemo, useState } from "react";
 import Map, { Source, Layer, Popup } from "react-map-gl/maplibre";
 import useMapStore from "@/stores/mapStore";
 import useMapData from "./useMapData";
-import MapStationCard from "@/components/MapStationCard";
+import MapStationCard from "./MapStationCard";
 import MapFilterPanel from "./MapFilterPanel";
 import { PROVINCE_BOUNDS, PROVINCE_COLOURS, PROVINCE_LABEL_ANCHORS, PROVINCES } from "@/lib/constants";
 

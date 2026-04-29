@@ -50,9 +50,6 @@ class Station(Base):
     historical_daily_means: Mapped[list["HistoricalDailyMean"]] = relationship(
         back_populates="station", cascade="all, delete-orphan"
     )
-    favorited_by: Mapped[list["FavoriteStation"]] = relationship(
-        back_populates="station", cascade="all, delete-orphan"
-    )
     station_weather: Mapped["StationWeather"] = relationship(
         back_populates="station", cascade="all, delete-orphan", uselist=False
     )
