@@ -4,7 +4,8 @@ import WaterPulseLogo from "@/components/WaterPulseLogo";
 const NAV_LINKS = [
   { label: "Dashboard", href: "/dashboard" },
   { label: "Map", href: "/map" },
-  { label: "Favourites", href: "/favourites" },
+  { label: "Collections", href: "/collections" },
+  { label: "Discover", href: "/collections/discover" },
   { label: "Advanced Data", href: "/advanced-data" },
   { label: "About", href: "/about" },
   { label: "Contact", href: "/contact" },
