@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
 import RatingPill from "@/components/RatingPill";
 import AddToCollectionMenu from "@/components/AddToCollectionMenu";
 import api from "@/lib/api";
@@ -32,6 +33,13 @@ const IconLoader = ({ className = "w-4 h-4" }) => (
   <svg className={`${className} animate-spin`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
     <circle cx="12" cy="12" r="10" className="opacity-25" />
     <path d="M4 12a8 8 0 018-8" className="opacity-75" />
+  </svg>
+);
+
+const IconMapPin = ({ className = "w-4 h-4" }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z" />
+    <circle cx="12" cy="10" r="3" />
   </svg>
 );
 
@@ -241,17 +249,28 @@ export default function StationDetail({ stationNumber, onClose, refreshButton = 
         </div>
       </div>
 
-      {/* ── Refresh button ───────────── */}
-      {refreshButton && (
-        <div className="flex justify-end mb-4">
-          <button
-            onClick={handleRefresh}
-            disabled={refreshing}
-            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-medium bg-white border border-slate-200 text-slate-900 hover:text-[#1e6ba8] hover:border-[#2196f3]/40 disabled:opacity-50 transition-all"
-          >
-            {refreshing ? <IconLoader className="w-3.5 h-3.5" /> : <IconRefresh className="w-3.5 h-3.5" />}
-            {refreshing ? "Refreshing..." : "Refresh"}
-          </button>
+      {/* ── Action buttons ───────────── */}
+      {(refreshButton || (station.latitude != null && station.longitude != null)) && (
+        <div className="flex justify-end gap-2 mb-4">
+          {station.latitude != null && station.longitude != null && (
+            <Link
+              href={`/map?lat=${station.latitude}&lng=${station.longitude}&z=14&station=${station.station_number}`}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-medium bg-white border border-slate-200 text-slate-900 hover:text-[#1e6ba8] hover:border-[#2196f3]/40 transition-all"
+            >
+              <IconMapPin className="w-3.5 h-3.5" />
+              View on Map
+            </Link>
+          )}
+          {refreshButton && (
+            <button
+              onClick={handleRefresh}
+              disabled={refreshing}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-medium bg-white border border-slate-200 text-slate-900 hover:text-[#1e6ba8] hover:border-[#2196f3]/40 disabled:opacity-50 transition-all"
+            >
+              {refreshing ? <IconLoader className="w-3.5 h-3.5" /> : <IconRefresh className="w-3.5 h-3.5" />}
+              {refreshing ? "Refreshing..." : "Refresh"}
+            </button>
+          )}
         </div>
       )}
 
