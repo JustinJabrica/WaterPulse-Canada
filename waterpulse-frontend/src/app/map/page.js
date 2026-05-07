@@ -2,7 +2,6 @@
 
 import { useEffect, useRef } from "react";
 import dynamic from "next/dynamic";
-import Navbar from "@/components/Navbar";
 import MapLegend from "./MapLegend";
 import SelectionSummaryPanel from "./SelectionSummaryPanel";
 import useMapStore from "@/stores/mapStore";
@@ -19,7 +18,7 @@ const MapView = dynamic(() => import("./MapView"), { ssr: false });
  * Writes back to the URL (via replaceState) when viewport or filters change,
  * so the URL always reflects the current map view without triggering re-renders.
  *
- * Supported params: lat, lng, z, province, type, favourites, collection
+ * Supported params: lat, lng, z, province, type, favourites, collection, station
  */
 function useUrlStateSync() {
   const viewState = useMapStore((s) => s.viewState);
@@ -27,11 +26,13 @@ function useUrlStateSync() {
   const typeFilter = useMapStore((s) => s.typeFilter);
   const favouritesOnly = useMapStore((s) => s.favouritesOnly);
   const collectionFilter = useMapStore((s) => s.collectionFilter);
+  const selectedStationNumber = useMapStore((s) => s.selectedStationNumber);
   const setViewState = useMapStore((s) => s.setViewState);
   const setProvinceFilter = useMapStore((s) => s.setProvinceFilter);
   const setTypeFilter = useMapStore((s) => s.setTypeFilter);
   const setFavouritesOnly = useMapStore((s) => s.setFavouritesOnly);
   const setCollectionFilter = useMapStore((s) => s.setCollectionFilter);
+  const setSelectedStationNumber = useMapStore((s) => s.setSelectedStationNumber);
 
   const initialised = useRef(false);
 
@@ -45,6 +46,7 @@ function useUrlStateSync() {
     const type = params.get("type");
     const favourites = params.get("favourites");
     const collection = params.get("collection");
+    const station = params.get("station");
 
     if (!isNaN(lat) && !isNaN(lng) && !isNaN(z)) {
       setViewState({ latitude: lat, longitude: lng, zoom: z });
@@ -55,27 +57,36 @@ function useUrlStateSync() {
     }
     if (favourites === "true") setFavouritesOnly(true);
     if (collection) setCollectionFilter(collection);
+    if (station) setSelectedStationNumber(station);
 
     initialised.current = true;
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Write to URL when state changes (after initial restore)
+  // Write to URL when state changes (after initial restore).
+  // Debounced so a pan gesture (~60 viewState updates/sec) coalesces into a
+  // single trailing replaceState call. iOS Safari rate-limits replaceState
+  // aggressively and terminates the tab when called per-frame.
   useEffect(() => {
     if (!initialised.current) return;
 
-    const params = new URLSearchParams();
-    params.set("lat", viewState.latitude.toFixed(4));
-    params.set("lng", viewState.longitude.toFixed(4));
-    params.set("z", viewState.zoom.toFixed(2));
-    if (provinceFilter) params.set("province", provinceFilter);
-    if (typeFilter !== "all") params.set("type", typeFilter);
-    if (favouritesOnly) params.set("favourites", "true");
-    if (collectionFilter) params.set("collection", collectionFilter);
+    const handle = setTimeout(() => {
+      const params = new URLSearchParams();
+      params.set("lat", viewState.latitude.toFixed(4));
+      params.set("lng", viewState.longitude.toFixed(4));
+      params.set("z", viewState.zoom.toFixed(2));
+      if (provinceFilter) params.set("province", provinceFilter);
+      if (typeFilter !== "all") params.set("type", typeFilter);
+      if (favouritesOnly) params.set("favourites", "true");
+      if (collectionFilter) params.set("collection", collectionFilter);
+      if (selectedStationNumber) params.set("station", selectedStationNumber);
 
-    const url = `${window.location.pathname}?${params.toString()}`;
-    window.history.replaceState(null, "", url);
-  }, [viewState, provinceFilter, typeFilter, favouritesOnly, collectionFilter]);
+      const url = `${window.location.pathname}?${params.toString()}`;
+      window.history.replaceState(null, "", url);
+    }, 300);
+
+    return () => clearTimeout(handle);
+  }, [viewState, provinceFilter, typeFilter, favouritesOnly, collectionFilter, selectedStationNumber]);
 }
 
 /**
@@ -141,7 +152,6 @@ export default function MapPage() {
 
   return (
     <div className="h-screen flex flex-col pt-16">
-      <Navbar />
       <div className="flex-1 relative">
         <MapView />
         <MapLegend />

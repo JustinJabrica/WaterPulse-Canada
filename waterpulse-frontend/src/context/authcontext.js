@@ -108,6 +108,7 @@ export function AuthProvider({ children }) {
     register,
     logout,
     toast,
+    showToast,
     dismissToast,
   };
 
