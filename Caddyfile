@@ -5,12 +5,13 @@
 # Routes all browser traffic through a single origin, enabling HTTPOnly cookie
 # auth between the Next.js frontend and FastAPI backend (same-origin requirement).
 #
-# Routing rules:
-#   /api/*        → backend:8000   FastAPI REST endpoints
-#   /docs         → backend:8000   Swagger UI
-#   /docs/*       → backend:8000   Swagger sub-resources
-#   /openapi.json → backend:8000   OpenAPI spec
-#   /*            → frontend:3000  Next.js pages and static assets
+# Routing rules (evaluated top-down, first matching `handle` wins):
+#   /tiles/*      → static files in /srv/tiles    Self-hosted PMTiles basemap
+#   /api/*        → backend:8000                  FastAPI REST endpoints
+#   /docs         → backend:8000                  Swagger UI
+#   /docs/*       → backend:8000                  Swagger sub-resources
+#   /openapi.json → backend:8000                  OpenAPI spec
+#   /*            → frontend:3000                 Next.js pages and static assets
 #
 # SITE_ADDRESS controls dev vs prod TLS behaviour:
 #   Dev  (.env):  SITE_ADDRESS=:80              — plain HTTP, no TLS attempted
@@ -30,26 +31,34 @@
 {$SITE_ADDRESS} {
     encode zstd gzip
 
-    @backend path /api/* /docs /docs/* /openapi.json
-    reverse_proxy @backend backend:8000 {
-        transport http {
-            dial_timeout 30s
-            read_timeout 30m
-            write_timeout 30m
-        }
-        header_up Host {host}
-        header_up X-Real-IP {remote_host}
-        # X-Forwarded-For and X-Forwarded-Proto are set automatically by Caddy's
-        # reverse_proxy. Re-enable explicitly if a future upstream needs a
-        # non-default value.
-        # header_up X-Forwarded-For {remote_host}
-        # header_up X-Forwarded-Proto {scheme}
+    # Self-hosted PMTiles basemap. Caddy's file_server supports HTTP Range
+    # requests by default (required by the pmtiles JS protocol handler).
+    # The tiles/ folder is bind-mounted read-only from the repo root.
+    handle /tiles/* {
+        root * /srv/tiles
+        uri strip_prefix /tiles
+        file_server
+        header Cache-Control "public, max-age=86400"
+        header Access-Control-Allow-Origin "*"
     }
 
-    reverse_proxy frontend:3000 {
-        header_up Host {host}
-        header_up X-Real-IP {remote_host}
-        # header_up X-Forwarded-For {remote_host}
-        # header_up X-Forwarded-Proto {scheme}
+    @backend path /api/* /docs /docs/* /openapi.json
+    handle @backend {
+        reverse_proxy backend:8000 {
+            transport http {
+                dial_timeout 30s
+                read_timeout 30m
+                write_timeout 30m
+            }
+            header_up Host {host}
+            header_up X-Real-IP {remote_host}
+        }
+    }
+
+    handle {
+        reverse_proxy frontend:3000 {
+            header_up Host {host}
+            header_up X-Real-IP {remote_host}
+        }
     }
 }

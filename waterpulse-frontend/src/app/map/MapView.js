@@ -1,5 +1,8 @@
 import { useRef, useCallback, useMemo, useState, useEffect } from "react";
 import Map, { Source, Layer, Popup } from "react-map-gl/maplibre";
+import maplibregl from "maplibre-gl";
+import { Protocol } from "pmtiles";
+import { layers as pmLayers, namedFlavor } from "@protomaps/basemaps";
 import useMapStore from "@/stores/mapStore";
 import { useAuth } from "@/context/authcontext";
 import useMapData from "./useMapData";
@@ -8,13 +11,20 @@ import MapFilterPanel from "./MapFilterPanel";
 import LocationConsentModal from "./LocationConsentModal";
 import { PROVINCE_BOUNDS, PROVINCE_COLOURS, PROVINCE_LABEL_ANCHORS, PROVINCES } from "@/lib/constants";
 
+// Register the pmtiles:// protocol handler once at module scope so React
+// StrictMode's double-invocation in dev doesn't attempt to register twice.
+if (typeof window !== "undefined" && !window.__pmtilesRegistered) {
+  maplibregl.addProtocol("pmtiles", new Protocol().tile);
+  window.__pmtilesRegistered = true;
+}
+
 // Province overlay is only active when zoomed out enough to see all of Canada.
 const PROVINCE_OVERLAY_MAX_ZOOM = 6;
 
 /* ── Marker colour mapping ───────────────────────────
    Matches RATING_CONFIG from constants.js:
    Very Low = red, Low = amber, Average = emerald,
-   High = blue, Very High = purple, No data = slate */
+   High = blue, Very High = purple, No historical data = slate */
 const RATING_COLOURS = {
   "very low": "#ef4444",
   low: "#f59e0b",
@@ -24,8 +34,125 @@ const RATING_COLOURS = {
   none: "#94a3b8",
 };
 
-const TILE_STYLE =
+// Basemap: self-hosted Protomaps PMTiles when NEXT_PUBLIC_TILES_URL is set,
+// CartoDB Voyager as fallback. The fallback keeps the /map page working on
+// fresh clones before the ~5–6 GB canada.pmtiles is downloaded.
+const PMTILES_URL = process.env.NEXT_PUBLIC_TILES_URL;
+const CARTO_FALLBACK =
   "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json";
+
+function buildMapStyle() {
+  if (!PMTILES_URL) return CARTO_FALLBACK;
+  const flavor = namedFlavor("light");
+  const base = pmLayers("protomaps", flavor, { lang: "en" });
+  // Override the default water styling so rivers and lakes read as the
+  // primary visual element — aligns with the recreational-waterways focus.
+  const tuned = base.map((l) => {
+    switch (l.id) {
+      case "water":
+        return { ...l, paint: { ...l.paint, "fill-color": "#6ec5ff" } };
+      case "water_river":
+        // minzoom 10 keeps a wide view from drawing every river in northern
+        // Canada at once. At zoom 9 the line layer was hitting Firefox's slow-
+        // script timeout when fitBounds landed on a distant city.
+        return {
+          ...l,
+          minzoom: 10,
+          paint: {
+            ...l.paint,
+            "line-color": "#6ec5ff",
+            "line-width": [
+              "interpolate", ["exponential", 1.4], ["zoom"],
+              10, 1.6,
+              12, 2.8,
+              14, 4.5,
+              18, 9,
+            ],
+          },
+        };
+      case "water_stream":
+        // Streams must stay >= 13. Below that, the feature count across a
+        // continental viewport is enough to crash the renderer.
+        return {
+          ...l,
+          minzoom: 13,
+          paint: {
+            ...l.paint,
+            "line-color": "#1e6ba8",
+            "line-width": [
+              "interpolate", ["linear"], ["zoom"],
+              14, 0.8,
+              18, 2.0,
+            ],
+          },
+        };
+      // River/stream labels only appear from zoom 11 so the map stays
+      // uncluttered when panning across the country.
+      case "water_waterway_label":
+        return {
+          ...l,
+          minzoom: 9,
+          layout: {
+            ...l.layout,
+            "text-font": ["Noto Sans Medium"],
+            "symbol-spacing": 150,
+            "text-size": [
+              "interpolate", ["linear"], ["zoom"],
+              9, 16,
+              12, 20,
+              15, 24,
+              17, 28,
+            ],
+          },
+          paint: {
+            ...l.paint,
+            "text-halo-width": 2,
+          },
+        };
+      case "water_label_lakes":
+        return {
+          ...l,
+          minzoom: 9,
+          layout: {
+            ...l.layout,
+            "text-font": ["Noto Sans Medium"],
+            "text-size": [
+              "interpolate", ["linear"], ["zoom"],
+              9, 16,
+              12, 20,
+              15, 24,
+              17, 28,
+            ],
+          },
+          paint: {
+            ...l.paint,
+            "text-halo-width": 2,
+          },
+        };
+      default:
+        return l;
+    }
+  });
+  return {
+    version: 8,
+    glyphs:
+      "https://protomaps.github.io/basemaps-assets/fonts/{fontstack}/{range}.pbf",
+    // Without a sprite the layered style references images (townspot, capital,
+    // shields, POI icons) that fail to load and spam the console.
+    sprite: "https://protomaps.github.io/basemaps-assets/sprites/v4/light",
+    sources: {
+      protomaps: {
+        type: "vector",
+        url: `pmtiles://${PMTILES_URL}`,
+        attribution:
+          '© <a href="https://openstreetmap.org">OpenStreetMap</a>, © <a href="https://protomaps.com">Protomaps</a>',
+      },
+    },
+    layers: tuned,
+  };
+}
+
+const MAP_STYLE = buildMapStyle();
 
 /* ── MapLibre layer definitions ──────────────────────
    Three layers render on top of a single GeoJSON source:
@@ -54,7 +181,7 @@ const clusterCountLayer = {
   layout: {
     "text-field": "{point_count_abbreviated}",
     "text-size": 13,
-    "text-font": ["Open Sans Bold"],
+    "text-font": ["Noto Sans Medium"],
   },
   paint: {
     "text-color": "#ffffff",
@@ -88,7 +215,7 @@ const provinceClusterCountLayer = {
   layout: {
     "text-field": ["get", "countLabel"],
     "text-size": 13,
-    "text-font": ["Open Sans Bold"],
+    "text-font": ["Noto Sans Medium"],
     "text-allow-overlap": true,
   },
   paint: {
@@ -135,7 +262,7 @@ const provinceLabelLayer = {
   maxzoom: PROVINCE_OVERLAY_MAX_ZOOM,
   layout: {
     "text-field": ["get", "name"],
-    "text-font": ["Open Sans Bold"],
+    "text-font": ["Noto Sans Medium"],
     "text-size": ["interpolate", ["linear"], ["zoom"], 2, 10, 4, 14],
     "text-allow-overlap": false,
     "text-padding": 4,
@@ -241,8 +368,12 @@ export default function MapView() {
     const map = mapRef.current?.getMap();
     if (map) {
       const layers = map.getStyle()?.layers || [];
+      // Carto uses `place_*` layer ids; Protomaps uses `places_*`. Accept both
+      // so the beforeId insertion works against either basemap.
       const firstPlaceLabel = layers.find(
-        (l) => l.type === "symbol" && typeof l.id === "string" && l.id.startsWith("place_")
+        (l) => l.type === "symbol"
+            && typeof l.id === "string"
+            && (l.id.startsWith("place_") || l.id.startsWith("places_"))
       );
       if (firstPlaceLabel) setPlaceLabelBeforeId(firstPlaceLabel.id);
     }
@@ -539,7 +670,8 @@ export default function MapView() {
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
         interactiveLayerIds={["clusters", "station-markers", "province-fills"]}
-        mapStyle={TILE_STYLE}
+        mapStyle={MAP_STYLE}
+        maxZoom={15}
         style={{ width: "100%", height: "100%" }}
       >
         <Source
@@ -574,7 +706,7 @@ export default function MapView() {
           type="geojson"
           data={geojson}
           cluster={true}
-          clusterMaxZoom={14}
+          clusterMaxZoom={13}
           clusterRadius={50}
         >
           <Layer {...clusterLayer} beforeId={placeLabelBeforeId || undefined} />
