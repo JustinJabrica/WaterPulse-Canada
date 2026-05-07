@@ -171,7 +171,7 @@ def compute_role(collection: Collection, user: User | None) -> str | None:
 
 
 def normalise_tag(name: str) -> str:
-    cleaned = name.strip()
+    cleaned = name.strip().lower()
     if not cleaned:
         raise HTTPException(status_code=422, detail="Tag name cannot be empty")
     if len(cleaned) > 20:
