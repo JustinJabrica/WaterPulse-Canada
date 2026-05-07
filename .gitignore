@@ -11,6 +11,8 @@ DevPlan+Notes/
 # ── Claude Code instructions ─────────────────
 CLAUDE*.md
 **/CLAUDE*.md
+.claude/
+**/.claude/
 
 # ── Error logs ───────────────────────────────
 chromebook-error-log/
@@ -73,3 +75,7 @@ waterpulse-backend/requirements-dev.txt
 /ListStationsAndAlerts.json
 Python Component Creation/*.json
 Python Component Creation/*.csv
+
+# ── PMTiles basemap (local only — multi-GB) ──
+/tiles/*.pmtiles
+/canada.pmtiles
