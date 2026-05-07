@@ -26,41 +26,64 @@ Next.js 16 (App Router) with JavaScript, React 19, and Tailwind CSS 4.
 ```
 src/
 ├── app/
-│   ├── layout.js                        # Root layout, fonts, AuthProvider, modal slot
+│   ├── layout.js                        # Root layout, fonts, AuthProvider, global Navbar, Toast, modal slot
 │   ├── page.js                          # Landing page (/)
-│   ├── globals.css                      # Brand tokens, keyframes, utilities, MapLibre CSS
-│   ├── dashboard/page.js                # Station cards, search, province picker
+│   ├── globals.css                      # Brand tokens, keyframes (incl. scroll-text), utilities, MapLibre CSS
+│   ├── dashboard/
+│   │   ├── page.js                      # Station cards, province-scoped search, type filter, infinite scroll
+│   │   └── FeaturedCollections.js       # is_valuable=true cards near the top of /dashboard
 │   ├── map/
-│   │   ├── page.js                      # Map page, dynamic import, URL state sync
-│   │   ├── MapView.js                   # react-map-gl wrapper, GeoJSON layers, clustering, popups
+│   │   ├── page.js                      # Map page, dynamic import, debounced URL state sync, deep-links
+│   │   ├── MapView.js                   # react-map-gl wrapper, GeoJSON + waterway layers, clustering, popups, geolocation
 │   │   ├── useMapData.js                # Viewport-based bbox fetch hook (debounced)
-│   │   ├── MapFilterPanel.js            # Province dropdown, type toggle, showNoData toggle
+│   │   ├── MapFilterPanel.js            # Hosts the search bar plus province / type / showNoData filters
+│   │   ├── MapSearchBar.js              # Photon-backed place-name autocomplete; flies to result on select
+│   │   ├── LocationConsentModal.js      # First-visit consent dialog before invoking navigator.geolocation
+│   │   ├── MapStationCard.js            # Compact popup card with View Details + Select + AddToCollectionMenu
 │   │   ├── MapLegend.js                 # Collapsible rating colour legend (bottom-right)
 │   │   └── SelectionSummaryPanel.js     # Multi-station aggregated summary sidebar
+│   ├── collections/
+│   │   ├── page.js                      # Auth list with Mine / Shared / Favourited tabs
+│   │   ├── new/page.js                  # Create form (Suspense-wrapped for useSearchParams)
+│   │   ├── [id]/page.js                 # Read-only detail with aggregation; favourite + admin Feature toggles
+│   │   ├── [id]/edit/page.js            # Editor with stations, collaborators, share link, danger zone
+│   │   ├── discover/page.js             # Public browse with province / tag / q / featured filters
+│   │   ├── share/[token]/page.js        # Anonymous-friendly share-link viewer
+│   │   ├── CollectionEditor.js          # Form (name, description, public toggle, tags + autocomplete)
+│   │   ├── StationPicker.js             # Search-as-you-type station picker for the editor
+│   │   ├── CollaboratorPicker.js        # Username-search invite UI (owner-only)
+│   │   └── ShareLinkPanel.js            # Generate / copy / rotate / disable share token (owner-only)
+│   ├── about/page.js                    # Mission, data sources, provisional-data caveat
+│   ├── contact/page.js                  # Get-in-touch placeholder + data-issue reporting guide
+│   ├── advanced-data/page.js            # "Coming soon" — historical viewer roadmap
 │   ├── station/[station_number]/page.js # Station detail (full page, direct URL)
 │   ├── @modal/(.)station/[station_number]/page.js  # Station detail (modal overlay)
 │   ├── @modal/default.js                # Returns null when no modal is active
 │   ├── login/page.js                    # Log in (redirects if already authenticated)
 │   ├── register/page.js                 # Create account (redirects if already authenticated)
 │   ├── error.js                         # Global error boundary (catches component crashes)
-│   └── not-found.js                     # Custom 404 page (dark hero style)
+│   └── not-found.js                     # Custom 404 page
 ├── components/
-│   ├── WaterPulseLogo.js    # Brand logo (horizontal, stacked, icon-only)
-│   ├── Navbar.js            # Site-wide nav, auth-aware, transparent mode
-│   ├── Footer.js            # Site-wide footer with nav links + disclaimer
-│   ├── StationDetail.js     # Shared station content (readings, weather, metadata)
-│   ├── StationCard.js       # Card for list views (readings, pills, capacity bar)
-│   ├── MapStationCard.js    # Compact popup card for map (View Details + Select buttons)
-│   ├── RatingPill.js        # Colour-coded rating badge
-│   └── Toast.js             # Auth toast notifications (success/error, auto-dismiss)
+│   ├── WaterPulseLogo.js          # Brand logo (horizontal, stacked, icon-only)
+│   ├── Navbar.js                  # Site-wide nav, rendered globally; usePathname() drives transparent mode on /
+│   ├── Footer.js                  # Site-wide footer with nav links + disclaimer
+│   ├── StationDetail.js           # Shared station content (readings, weather, metadata, View on Map button)
+│   ├── StationCard.js             # Card for list views (readings, pills, capacity bar)
+│   ├── RatingPill.js              # Colour-coded rating badge
+│   ├── CollectionCard.js          # Card for /collections, /collections/discover, dashboard FeaturedCollections
+│   ├── AddToCollectionMenu.js     # Star button + popover; lives on StationCard, MapStationCard, StationDetail
+│   ├── ScrollingText.js           # Single-line text that scrolls horizontally on overflow (search results)
+│   └── Toast.js                   # Auth toast notifications (success/error, auto-dismiss)
 ├── stores/
 │   ├── dashboardStore.js    # Zustand — persists dashboard state across navigation
-│   └── mapStore.js          # Zustand — viewport, filters, selection (sessionStorage persist)
+│   └── mapStore.js          # Zustand — filters, selection, location consent (sessionStorage persist; viewState excluded)
 ├── context/
-│   └── authcontext.js       # AuthProvider — user state, login/register/logout, toast helpers
+│   └── authcontext.js       # AuthProvider — user state, login/register/logout, toast helpers (showToast exported)
 └── lib/
-    ├── api.js               # Fetch wrapper with credentials + CSRF header
-    └── constants.js          # Provinces, station types, ratings, WMO codes, AQI, Beaufort
+    ├── api.js                       # Fetch wrapper with credentials + CSRF header
+    ├── constants.js                 # Provinces, station types, ratings, WMO codes, AQI, Beaufort scale, DATA_SOURCES
+    ├── aggregateStations.js         # Pure helpers (mode, midpoint, formatTime, stationsBounds, computeReadingSummary, computeWeatherSummary)
+    └── useStationWeatherBatch.js    # Hook: batch /api/stations/{id}/weather fetch + cache for a station list
 ```
 
 ## Connecting to the Backend
@@ -117,7 +140,7 @@ Uses **Zustand** for state that must survive client-side page navigations (e.g.,
 Stores live in `src/stores/`.
 
 - `dashboardStore.js` — in-memory only (resets on tab close), intentional for guest users. Cookie-based persistence for logged-in users is planned.
-- `mapStore.js` — uses Zustand `persist` middleware with `sessionStorage` so map viewport, filters, and station selections survive page refreshes within the same tab. Transient API data (stations array, loading, error) is excluded from persistence.
+- `mapStore.js` — uses Zustand `persist` middleware with `sessionStorage` so filters, station selections, and the location-consent flags survive page refreshes within the same tab. Transient API data (stations array, loading, error) is excluded. **`viewState` is also excluded on purpose**: it updates ~60×/sec during pans, and a synchronous sessionStorage write per frame saturates the main thread on iOS Safari and kills the tab. The viewport is restored from URL params (`?lat&lng&z`) instead, with `replaceState` debounced 300 ms.
 
 ```jsx
 import useDashboardStore from "@/stores/dashboardStore";
@@ -149,24 +172,27 @@ Actions: `setSelectedProvince()`, `setSearchQuery()`, `setTypeFilter()`, `setSho
 
 ### Map Store (`src/stores/mapStore.js`)
 
-Persisted to `sessionStorage` via Zustand `persist` middleware. Selections and viewport survive page refresh.
+Persisted to `sessionStorage` via Zustand `persist` middleware. **`viewState` is intentionally not persisted** (see iOS Safari note above) — the viewport round-trips through the URL instead.
 
 | State | Type | Default | Persisted | Purpose |
 |-------|------|---------|-----------|---------|
-| `viewState` | `object` | `{ latitude: 56.0, longitude: -96.0, zoom: 4 }` | Yes | Map camera position |
+| `viewState` | `object` | `{ latitude: 56.0, longitude: -96.0, zoom: 4 }` | **No** | Map camera position. Restored from `?lat&lng&z` URL params on mount; written back to URL on a 300 ms trailing debounce. |
 | `provinceFilter` | `string \| null` | `null` | Yes | Province filter for bbox queries |
 | `typeFilter` | `string` | `"all"` | Yes | Station type filter ("all", "R", "L") |
 | `showNoData` | `boolean` | `false` | Yes | Show stations without current readings |
 | `favouritesOnly` | `boolean` | `false` | Yes | Filter to favourited stations (not yet functional — favourites are now per-collection, see `/collections`) |
 | `collectionFilter` | `string \| null` | `null` | Yes | Active collection id from `?collection={id}` deep-link. Consumed by `useCollectionDeepLink` in `/map/page.js` to fetch the collection and pre-select its stations on the map. |
 | `selectedStations` | `array` | `[]` | Yes | Multi-selection for summary panel |
-| `selectedStationNumber` | `string \| null` | `null` | Yes | Which marker popup is open |
+| `selectedStationNumber` | `string \| null` | `null` | Yes | Which marker popup is open. Round-trips with `?station=` so the View-on-Map deep-link auto-opens the popup. |
+| `userLocation` | `{ latitude, longitude, accuracy } \| null` | `null` | No | Result of the last successful Geolocation call. Re-acquired per session. |
+| `locationConsentGranted` | `boolean` | `false` | Yes | Whether the user accepted the location-sharing modal. Once true, Locate Me skips the modal next time. |
+| `locationPrompted` | `boolean` | `false` | Yes | Whether we've shown the consent modal at least once this profile (auto-prompt on first visit only). |
 | `stations` | `array` | `[]` | No | Current viewport stations from API |
 | `isLoading` | `boolean` | `false` | No | Fetch in progress |
 | `error` | `string \| null` | `null` | No | Last fetch error |
 | `provinceCounts` | `array \| null` | `null` | No | Per-province totals + `with_reading` counts (from `/api/stations/provinces`, fetched once on map mount). Used to size per-province cluster markers at low zoom. |
 
-Actions: `setViewState()`, `setProvinceFilter()`, `setTypeFilter()`, `setShowNoData()`, `setFavouritesOnly()`, `setCollectionFilter()`, `setStations()`, `setIsLoading()`, `setError()`, `setProvinceCounts()`, `setSelectedStationNumber()`, `toggleStationSelection()`, `clearSelection()`, `resetView()`.
+Actions: `setViewState()`, `setProvinceFilter()`, `setTypeFilter()`, `setShowNoData()`, `setFavouritesOnly()`, `setCollectionFilter()`, `setStations()`, `setIsLoading()`, `setError()`, `setProvinceCounts()`, `setSelectedStationNumber()`, `toggleStationSelection()`, `clearSelection()`, `resetView()`, `setUserLocation()`, `clearUserLocation()`, `setLocationConsentGranted()`, `setLocationPrompted()`.
 
 ## Station Detail — Modal Overlay and Full Page
 
@@ -290,20 +316,13 @@ Colour-coded badge for flow/level/capacity ratings. Accepts a `rating` prop (low
 
 ### Navbar (`src/components/Navbar.js`)
 
-Site-wide navigation bar with two modes:
+Rendered **once globally** in the root layout — every route inherits it. The component reads `usePathname()` internally and switches to its **transparent** variant on `/` only (where it sits over the landing page's dark hero and solidifies on scroll). Every other route gets the solid white variant. There is no prop API anymore — the route picks the mode.
 
-| Prop | Default | Behaviour |
-|------|---------|-----------|
-| `transparent` | `false` | When `true`, starts see-through over dark hero sections and turns solid white on scroll. When `false`, always solid (inner pages). |
-
-Auth-aware: shows Dashboard + Map links for all users. Authenticated users get a username dropdown (Profile, Log Out); guests see a single Log In button.
+Auth-aware: shows Dashboard, Map, and Collections links for all users. Authenticated users get a username dropdown (Profile, Log Out); guests see a single Log In button.
 
 On mobile (below `sm` breakpoint) the links collapse into a hamburger menu. Both the mobile menu and the username dropdown close when clicking outside the navbar.
 
-```jsx
-<Navbar transparent />  {/* Landing page — over dark hero */}
-<Navbar />               {/* Inner pages — always solid */}
-```
+> Known minor regression: the 404 page (`not-found.js`) used to render the transparent variant over its dark hero. Since Next.js renders `not-found.js` for any unmatched URL there's no clean way for the global navbar to detect "this is the 404 view," so it now uses the solid variant on 404. Acceptable tradeoff for the global render.
 
 ### Toast (`src/components/Toast.js`)
 
@@ -318,7 +337,27 @@ Rendered once at the root in `src/app/layout.js`.
 
 ### Footer (`src/components/Footer.js`)
 
-Dark navy footer with navigation links, ECCC and provincial data disclaimer, and dynamic copyright year.
+Dark navy footer with navigation links (Dashboard, Map, Collections, Discover, Advanced Data, About, Contact), ECCC and provincial data disclaimer, and dynamic copyright year.
+
+### ScrollingText (`src/components/ScrollingText.js`)
+
+Single-line text that scrolls horizontally end-to-end (with brief pauses at each end) **only when the text overflows its container** — non-overflowing text stays still. Animation uses `transform` (GPU-composited) so it doesn't trigger layout/paint per frame, and respects `prefers-reduced-motion` via globals.css. Used by the map search dropdown to surface long Photon result names without wrapping.
+
+```jsx
+<ScrollingText text={result.name} className="flex-1 min-w-0 text-slate-900" />
+```
+
+Accepts `text`, `className`, and `pxPerSec` (default 28).
+
+### AddToCollectionMenu (`src/components/AddToCollectionMenu.js`)
+
+Star button + popover surface. Lives on `StationCard`, `MapStationCard`, and `StationDetail`. Hidden entirely for guests. On open it fetches the user's collections, marks the ones already containing this station with a checkmark, and lets the user toggle membership with optimistic flips. A "+ New collection with this station" CTA at the bottom deep-links to `/collections/new?stations=…`.
+
+The membership lookup is on-demand (Promise.all over `GET /api/collections/{id}` per user-collection on popover open). Fine for typical small collection counts; a backend `?include=in_my_collections` follow-up is tracked separately for users with many collections.
+
+### CollectionCard (`src/components/CollectionCard.js`)
+
+Card representation of a Collection — used by `/collections`, `/collections/discover`, and the dashboard `FeaturedCollections` strip. Whole card is wrapped in a Next.js `Link`. Shows name, owner username, public/private + Featured badges, description, tags (with overflow `+N` chip), station count, role pill (Owner / Editor / Viewer), and a heart icon when favourited.
 
 ### WaterPulseLogo (`src/components/WaterPulseLogo.js`)
 
@@ -381,16 +420,16 @@ This file contains all the lookup tables and utility functions the frontend uses
 | `/station/[station_number]` | Built | Full readings (flow/level/elevation/outflow), percentile bars with P25-P75 zone, capacity bar for reservoirs, weather card (temp/wind+Beaufort/AQI/UV/humidity/sunrise/sunset — fetched separately with its own loading spinner), 7-day forecast, station metadata, data source label, manual refresh button. Works as modal overlay (in-app) or full page (direct URL) |
 | `/login` | Built | Email/username + password form, error display, loading state, redirects authenticated users to dashboard |
 | `/register` | Built | Username, email, password with confirm, client-side validation (8 char min, match check), redirects authenticated users to dashboard |
-| `/map` | Built | Interactive MapLibre GL JS map (CartoDB Voyager tiles). Below zoom 6: a province overlay with per-province fills (unique colours), borders, labels, and a single per-province cluster marker sized by total reading count from `/api/stations/provinces`. Above zoom 6: per-station markers colour-coded by rating, with native clustering. Basemap city/town labels render above station dots (via `beforeId`). Click-to-zoom clusters, multi-station selection with aggregated summary panel (avg flow/level/temp, highs/lows, dominant rating, sunrise/sunset, nearby stations), "Save as Collection" link from the panel, `?collection={id}` deep-link consumer (pre-selects stations + fits bounds), province/type/showNoData filters, rating legend, URL state sync, sessionStorage persistence |
+| `/map` | Built | Interactive MapLibre GL JS map. Basemap is **self-hosted PMTiles** (Protomaps Canada extract via `pmtiles://` protocol) when `NEXT_PUBLIC_TILES_URL` is set, with **CartoDB Voyager** as the fallback. Below zoom 6: province overlay with per-province fills, borders, labels, and a single cluster marker per province sized by total reading count from `/api/stations/provinces`. Above zoom 6: per-station markers colour-coded by rating, with native clustering and waterway styling overlays. Basemap city/town labels render above station dots (via `beforeId`). Place-name **search bar** (Photon backend, `ScrollingText` for long names). **Locate Me** button + first-visit consent modal that drops a pulsing user marker after `navigator.geolocation` succeeds. Click-to-zoom clusters, multi-station selection with aggregated summary panel (avg flow/level/temp, highs/lows, dominant rating, sunrise/sunset, nearby stations), "Save as Collection" link from the panel, `?collection={id}` and `?station={number}` deep-link consumers, province/type/showNoData filters, rating legend, URL state sync (debounced 300 ms — iOS Safari requires this), sessionStorage persistence for selections |
 | `/collections` | Built | Auth-required list with Mine / Shared with me / Favourited tabs. Guests see the page but each tab shows a sign-up CTA. Header has Discover and "+ New collection" buttons. |
 | `/collections/new` | Built | Create form. Reads `?stations=…&name=…` for prefill (used by the map's "Save as Collection" button). |
 | `/collections/[id]` | Built | Read-only detail with aggregation panels, station list, collaborators (visible to viewer/editor/owner), share link (owner-only). Action buttons: Favourite (auth), View on Map (when stations exist), Edit (owner+editor), Feature/Unfeature (admin-only). |
 | `/collections/[id]/edit` | Built | Owner+editor editor. Sections: Details, Stations (existing list with remove + StationPicker), Collaborators (owner-only), Share link (owner-only), Danger zone (owner-only delete). |
 | `/collections/discover` | Built | Public browse with search, province dropdown, popular-tag chips, Featured toggle. URL state synced. |
 | `/collections/share/[token]` | Built | Anonymous-friendly read-only viewer. Falls back to "Link expired" on 404. |
-| `/advanced-data` | Not started | Historical data explorer |
-| `/about` | Not started | |
-| `/contact` | Not started | |
+| `/about` | Built (scaffold) | Mission, audience, data sources (ECCC + Alberta + Open-Meteo), provisional-data caveat, CTAs back to dashboard / map |
+| `/contact` | Built (scaffold) | Get-in-touch placeholder, data-issue reporting guidance, response-time note. Email block intentionally omitted — fill in before launch |
+| `/advanced-data` | Built (scaffold) | "Coming soon" landing for the historical viewer / station statistics / CSV+JSON export plan |
 
 ## Error Handling
 
@@ -589,3 +628,5 @@ The `.dockerignore` file excludes `node_modules/` (~300 MB) and `.next/` from th
 - Use Canadian English: favourites, colours, metres
 - `.env.local` contains `NEXT_PUBLIC_API_URL` — never commit it
 - State that must survive navigation goes in Zustand stores (`src/stores/`), not `useState`
+- **Never put animation-frame-rate state (e.g. map `viewState` on every `onMove`, drag positions, scroll offsets) into Zustand's `persist` partialize.** The middleware writes to storage synchronously on every update, and 60 writes/sec to sessionStorage saturates the main thread on iOS Safari and terminates the tab. Keep high-churn state in memory only; use URL params or a trailing-debounced effect for anything that must survive refresh. Same rule for `window.history.replaceState` — debounce it (≥200 ms trailing) if driven by high-frequency state.
+- Test all interactive features on a real iPhone via [`docs/cloudflare-tunnel.md`](../docs/cloudflare-tunnel.md) — desktop will not surface this class of bug.

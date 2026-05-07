@@ -1258,6 +1258,8 @@ The legacy `/api/favorites/*` endpoints were retired in migration `0002_collecti
 | GET | `/api/tags?q={prefix}` | Tag-name prefix search for the editor's tag input |
 | GET | `/api/tags/popular` | Most-used tags across public collections, with usage counts (for the discovery filter chips) |
 
+> Tag names are normalised to **lowercase** on save (in `routes/collections.py::normalise_tag`). The `tags.name` column is CITEXT (case-insensitive uniqueness), but storing lowercase makes the displayed value deterministic regardless of which casing a user typed first.
+
 ### Admin
 
 | Method | Path | Description | Frequency |
