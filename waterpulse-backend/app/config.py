@@ -50,8 +50,11 @@ class Settings(BaseSettings):
     ECCC_ANNUAL_PEAKS_PATH: str = "/collections/hydrometric-annual-peaks/items"
 
     # ── Alberta — Endpoint paths (constants) ───────────────────────
+    # The legacy `/DataService/WaterlevelRecords` POST endpoint started
+    # returning HTTP 500 globally in late April 2026 and has been removed
+    # from this config. Current readings now come from the per-station
+    # static JSON URL discovered via each station's `datasets` array.
     ALBERTA_STATIONS_PATH: str = "/DataService/ListStationsAndAlerts"
-    ALBERTA_READINGS_PATH: str = "/DataService/WaterlevelRecords"
     ALBERTA_CSV_BASE_PATH: str = "/apps/Basins/data/porExtracts"
     ALBERTA_JSON_BASE_PATH: str = "/apps/Basins/data/figures/river/abrivers/stationdata"
 
@@ -129,10 +132,6 @@ class Settings(BaseSettings):
     @property
     def alberta_stations_url(self) -> str:
         return f"{self.ALBERTA_BASE_URL}{self.ALBERTA_STATIONS_PATH}"
-
-    @property
-    def alberta_readings_url(self) -> str:
-        return f"{self.ALBERTA_BASE_URL}{self.ALBERTA_READINGS_PATH}"
 
     def alberta_csv_flow_url(self, station: str) -> str:
         path = self.ALBERTA_CSV_FLOW_TEMPLATE.format(station=station)

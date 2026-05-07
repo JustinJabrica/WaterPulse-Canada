@@ -7,12 +7,17 @@ that ECCC does not cover, and enriches 374 shared stations with
 fields ECCC lacks (station type, basin, precipitation, reservoir data).
 
 Endpoints used:
-    - ListStationsAndAlerts    — station metadata (triple-encoded JSON)
-    - WaterlevelRecords        — current readings (POST per station)
-    - CSV downloads            — historical daily data (per station)
+    - ListStationsAndAlerts            — station metadata (triple-encoded JSON)
+    - Per-station static JSON datasets — current readings (GET; URL is
+      discovered via each station's "datasets" array, not constructed)
+    - CSV downloads                    — historical daily data (per station)
 
-Response format: triple-encoded JSON for stations, custom JSON for
-readings, CSV for historical. Each layer must be parsed separately.
+Response format: triple-encoded JSON for stations; for readings, a
+single-item list whose object has columnarray + data rows (5-day rolling
+window at ~5 min cadence); CSV for historical. Each layer is parsed
+separately. The legacy POST /DataService/WaterlevelRecords endpoint
+started returning HTTP 500 globally in late April 2026 and is no longer
+used; the static JSON file delivers the same shape.
 """
 
 import asyncio
@@ -190,8 +195,9 @@ class AlbertaProvider(BaseProvider):
         province: str | None = None,
     ) -> list[NormalizedReading]:
         """
-        Fetch current readings for Alberta stations by POSTing
-        to WaterlevelRecords per station in parallel batches.
+        Fetch current readings for Alberta stations by GETting each
+        station's per-station JSON dataset URL (from station.extra.datasets)
+        in parallel batches of `ALBERTA_BATCH_SIZE` concurrent requests.
 
         Filters:
             station_numbers — fetch only these specific stations
@@ -256,17 +262,29 @@ class AlbertaProvider(BaseProvider):
         semaphore: asyncio.Semaphore,
         station: NormalizedStation,
     ) -> NormalizedReading | None:
-        """Fetch current data for one Alberta station."""
+        """
+        Fetch current data for one Alberta station.
+
+        Uses the per-station static JSON file referenced in the station's
+        `datasets` array (dataset_description: "Most recent 5 days' data,
+        in JSON"). The legacy POST /DataService/WaterlevelRecords endpoint
+        began returning 500 globally in late April 2026; this static file
+        carries the same data shape (columnarray + data rows) and is parsed
+        by `_parse_reading_response` without modification.
+        """
+        json_url = None
+        if station.extra:
+            for ds in station.extra.get("datasets") or []:
+                location = ds.get("dataset_location") or ""
+                if location.endswith(".json"):
+                    json_url = location
+                    break
+        if not json_url:
+            return None
+
         async with semaphore:
             try:
-                resp = await client.post(
-                    settings.alberta_readings_url,
-                    data={
-                        "stationNumber": station.station_number,
-                        "stationType": station.station_type or "R",
-                        "dataType": station.data_type or "HG",
-                    },
-                )
+                resp = await client.get(json_url)
                 resp.raise_for_status()
                 raw = resp.json()
             except (httpx.HTTPError, httpx.TimeoutException):
@@ -279,7 +297,7 @@ class AlbertaProvider(BaseProvider):
         raw_json,
         station: NormalizedStation,
     ) -> NormalizedReading | None:
-        """Parse Alberta WaterlevelRecords response into a NormalizedReading."""
+        """Parse Alberta per-station JSON dataset response into a NormalizedReading."""
         if isinstance(raw_json, str):
             try:
                 raw_json = json.loads(raw_json)
