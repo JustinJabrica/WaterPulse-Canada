@@ -1,14 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 
 export default function NotFound() {
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900 overflow-x-hidden">
-      <Navbar transparent />
-
       {/* Dark hero matching the landing page */}
       <header className="relative flex-1 flex items-center justify-center overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-br from-[#0d2137] via-[#12304d] to-[#0f2a44]" />

@@ -3,7 +3,6 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import WaterPulseLogo from "@/components/WaterPulseLogo";
 import { useAuth } from "@/context/authcontext";
@@ -42,8 +41,6 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50">
-      <Navbar />
-
       <main className="flex-1 flex items-center justify-center px-6 pt-24 pb-16">
         <div className="w-full max-w-md">
           {/* Logo */}

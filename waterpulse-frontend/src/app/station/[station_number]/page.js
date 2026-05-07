@@ -1,7 +1,6 @@
 "use client";
 
 import { useParams, useRouter } from "next/navigation";
-import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import StationDetail from "@/components/StationDetail";
 
@@ -16,8 +15,6 @@ export default function StationDetailPage() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col">
-      <Navbar />
-
       <main className="flex-1 pt-20 pb-12 px-4 sm:px-6">
         <div className="max-w-4xl mx-auto">
           {/* Back button */}

@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
-import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import RatingPill from "@/components/RatingPill";
 import api from "@/lib/api";
@@ -293,9 +292,6 @@ export default function LandingPage() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 overflow-x-hidden">
-
-      {/* ━━━━━━━━━━━━━━━━ NAV ━━━━━━━━━━━━━━━━ */}
-      <Navbar transparent />
 
       {/* ━━━━━━━━━━━━━━━━ HERO ━━━━━━━━━━━━━━━━ */}
       <header className="relative min-h-[92vh] flex items-center justify-center overflow-hidden">

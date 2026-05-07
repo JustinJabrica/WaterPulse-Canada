@@ -1,5 +1,6 @@
 import { DM_Serif_Display, Plus_Jakarta_Sans } from "next/font/google";
 import { AuthProvider } from "@/context/authcontext";
+import Navbar from "@/components/Navbar";
 import Toast from "@/components/Toast";
 import "./globals.css";
 
@@ -27,6 +28,7 @@ export default function RootLayout({ children, modal }) {
     <html lang="en" className={`${dmSerif.variable} ${jakarta.variable}`}>
       <body className="min-h-screen flex flex-col bg-slate-50 text-slate-900 antialiased">
         <AuthProvider>
+          <Navbar />
           {children}
           {modal}
           <Toast />

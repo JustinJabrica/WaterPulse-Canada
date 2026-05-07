@@ -2,18 +2,17 @@
 
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import WaterPulseLogo from "@/components/WaterPulseLogo";
 import { useAuth } from "@/context/authcontext";
 
 /**
- * Navbar — shared site-wide navigation.
- *
- * Props:
- *   transparent  – when true the navbar starts see-through over a dark
- *                  hero section and turns solid on scroll (landing page).
- *                  When false (default) it is always solid (inner pages).
+ * Navbar — shared site-wide navigation. Rendered once in the root layout.
+ * Transparent over the landing-page dark hero, solid everywhere else.
  */
-export default function Navbar({ transparent = false }) {
+export default function Navbar() {
+  const pathname = usePathname();
+  const transparent = pathname === "/";
   const [scrolled, setScrolled] = useState(false);
   const { user, isAuthenticated, logout } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);

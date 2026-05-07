@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import StationCard from "@/components/StationCard";
 import FeaturedCollections from "./FeaturedCollections";
@@ -276,8 +275,6 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col overflow-x-hidden">
-      <Navbar />
-
       <main className="flex-1 pt-20 pb-12 px-4 sm:px-6">
         <div className="max-w-6xl mx-auto">
 
