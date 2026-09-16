@@ -48,6 +48,7 @@ Template (copy this shape in every source module)::
 """
 from __future__ import annotations
 
+import asyncio
 import time
 from dataclasses import dataclass, field
 from typing import Awaitable, Callable
@@ -147,46 +148,67 @@ async def http_probe(
     from_metadata: bool = False,
     read_text: bool = True,
     notes: str = "",
+    retries: int = 2,
+    retry_backoff: float = 1.5,
 ) -> Fetch:
-    """Perform one HTTP attempt; time + classify it; return a Fetch.
+    """Perform an HTTP attempt (with bounded retry on TRANSIENT failures);
+    time + classify it; return a Fetch.
 
     Never raises for HTTP/transport errors — classifies them into a
     RequestRecord so the caller can decide. `from_metadata=True` marks URLs
     the upstream advertised (so a 404 is an upstream gap, not our bug).
-    """
-    t0 = time.perf_counter()
-    resp: httpx.Response | None = None
-    status: int | None = None
-    resp_bytes = 0
-    text = ""
-    error_type = ""
-    try:
-        resp = await client.request(method, url, params=params, headers=headers)
-        status = resp.status_code
-        resp_bytes = len(resp.content)
-        if read_text:
-            try:
-                text = resp.text
-            except Exception:  # decoding issue
-                text = ""
-        reason = classify.classify_status(status, from_metadata=from_metadata)
-        outcome = "success" if reason == classify.OK else "failure"
-        reason_detail = "" if outcome == "success" else f"HTTP {status}"
-    except BaseException as exc:  # transport/parse
-        reason, reason_detail = classify.classify_exception(exc)
-        outcome = "failure"
-        error_type = type(exc).__name__
 
-    latency_ms = round((time.perf_counter() - t0) * 1000, 1)
-    rec = RequestRecord(
-        ts_utc=utcnow_iso(), source_id=source_id, category=category, method=method,
-        url=url, http_status=status, outcome=outcome, reason_category=reason,
-        reason_detail=reason_detail, error_type=error_type, latency_ms=latency_ms,
-        resp_bytes=resp_bytes, records_parsed=0, retry_after_s=_retry_after(resp),
-        notes=notes,
-    )
-    ok = outcome == "success"
-    return Fetch(record=rec, response=resp, ok=ok, text=text)
+    Transient reasons (5xx, 429, connect/read timeouts) are retried up to
+    `retries` times with linear backoff, honouring `Retry-After` — this makes
+    the sanctioned suite deterministic against upstream blips (e.g. GeoMet's
+    occasional 500s). NON-transient outcomes (2xx, 4xx, connect_refused,
+    dns_error, parse) return immediately. The residual harness passes
+    `retries=0` so its throttle/refusal signals stay pristine.
+    """
+    attempt = 0
+    while True:
+        t0 = time.perf_counter()
+        resp: httpx.Response | None = None
+        status: int | None = None
+        resp_bytes = 0
+        text = ""
+        error_type = ""
+        try:
+            resp = await client.request(method, url, params=params, headers=headers)
+            status = resp.status_code
+            resp_bytes = len(resp.content)
+            if read_text:
+                try:
+                    text = resp.text
+                except Exception:  # decoding issue
+                    text = ""
+            reason = classify.classify_status(status, from_metadata=from_metadata)
+            outcome = "success" if reason == classify.OK else "failure"
+            reason_detail = "" if outcome == "success" else f"HTTP {status}"
+        except BaseException as exc:  # transport/parse
+            reason, reason_detail = classify.classify_exception(exc)
+            outcome = "failure"
+            error_type = type(exc).__name__
+
+        latency_ms = round((time.perf_counter() - t0) * 1000, 1)
+        ra = _retry_after(resp)
+        transient = reason in (classify.HTTP_5XX, classify.HTTP_429,
+                               classify.CONNECT_TIMEOUT, classify.READ_TIMEOUT)
+        will_retry = outcome != "success" and transient and attempt < retries
+        note = notes
+        if attempt:
+            note = (f"{notes} [attempt {attempt + 1}]").strip()
+
+        rec = RequestRecord(
+            ts_utc=utcnow_iso(), source_id=source_id, category=category, method=method,
+            url=url, http_status=status, outcome=outcome, reason_category=reason,
+            reason_detail=reason_detail, error_type=error_type, latency_ms=latency_ms,
+            resp_bytes=resp_bytes, records_parsed=0, retry_after_s=ra, notes=note,
+        )
+        if not will_retry:
+            return Fetch(record=rec, response=resp, ok=(outcome == "success"), text=text)
+        await asyncio.sleep(min(ra if ra else retry_backoff * (attempt + 1), 15.0))
+        attempt += 1
 
 
 # ── Field-inventory helpers ─────────────────────────────────────────

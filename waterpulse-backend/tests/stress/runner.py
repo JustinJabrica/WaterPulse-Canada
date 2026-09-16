@@ -70,7 +70,7 @@ async def _fire(cfg: RunConfig, t: Target, urls: list[str], concurrency: int,
             # bad-path = a URL WE deliberately malformed (our address mistake).
             f = await http_probe(None, client, url, source_id=f"RESIDUAL-{t.key.upper()}",
                                  category="residual", from_metadata=(kind == "invalid"),
-                                 notes=kind)
+                                 notes=kind, retries=0)  # pristine: no retry masking of throttle/refusal
             recs.append(f.record)
 
     async with build_client(timeout=cfg.request_timeout,
