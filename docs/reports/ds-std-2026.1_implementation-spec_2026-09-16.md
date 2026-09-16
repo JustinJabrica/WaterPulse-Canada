@@ -44,7 +44,7 @@ This document covers the server-side application rooted at `waterpulse-backend/a
 |---|---|---|
 | Part 1 — Standard & Reconnaissance | The **106-probe registry (102 sanctioned + 4 residual)** across 12 categories and **41 distinct Source IDs**, and the primary/backup architecture: provincial-primary where a programmatic feed exists, ECCC/WSC as national backup and historical backbone; Quebec as a documented provincial-only exception [1] | §2, §3, §8 |
 | Part 2 — Methodology & Test Suite | The sanctioned probe methodology; the `http_probe` transient-retry policy (5xx/429/connect+read timeouts, bounded, honouring `Retry-After`); the residual-harness design (retries = 0, per-target skip of a blocked target, global abort only on 3+ consecutive cross-target blocks); the 4 residual probes `current-ab-rivers`, `current-bc-aquarius`, `current-sk-wsa`, `snow-ab-pillows-residual` [2] | §3, §10 |
-| Part 3 — Results & Verified Standard | Per-source measured coverage (**98/102 retrievable**); per-source licence and commercial posture; the non-commercial-vs-hypothetical-commercial two-tier model; the AB + SK + Open-Meteo-free-tier blockers. Residual load measurements are PENDING — Part 3a addendum (run `stress-20260916T105739Z` in progress) [3] | §6, §9, §10 |
+| Part 3 — Results & Verified Standard | Per-source measured coverage (**98/102 retrievable**); per-source licence and commercial posture; the non-commercial-vs-hypothetical-commercial two-tier model; the AB + SK + Open-Meteo-free-tier blockers. Residual load measurements are measured in the Part 3a addendum (run `stress-20260916T105739Z`, complete 2026-09-16) [3] | §6, §9, §10 |
 
 ### 1.4 Current implementation baseline (as-built, 2026-09-16)
 
@@ -195,7 +195,7 @@ The following adapters SHALL be added. "Measured" columns cite `run_id=probes-20
 | `datastream_odata` | OData v4 (JSON) | `SRC-RIVTEMP` | watertemp | **HTTP 401** — API key required | Requires `x-api-key` (request via form); 2 req/s; commercial=conditional |
 | `erddap` | ERDDAP tabledap (JSON/CSV) | `SRC-CIOOS` | watertemp | CIOOS Atlantic catalogue 10 rows/16 fields @152 ms | CC-BY / OGL / CC0 per dataset |
 | `zenodo_dataset` / CKAN | Static archive download + metadata; `open.canada.ca` CKAN `package_show` | `SRC-CANSWE`, `SRC-CRID`, `SRC-LAKEICE` | snow, ice | CanSWE 4 rows (1928→) @15.7 s; CRID 66 fields (1894–2015); LakeIce 64 fields — all `ok` | Large downloads; run under `--no-downloads` in CI |
-| `custom_ab` | Per-station static JSON | `SRC-AB-RIVERS` | current | residual (`sanctioned=False`); load behaviour PENDING Part 3a | GoA copyright, non-commercial; existing `AlbertaProvider` refactors onto this |
+| `custom_ab` | Per-station static JSON | `SRC-AB-RIVERS` | current | residual (`sanctioned=False`); load behaviour measured in Part 3a (§10) | GoA copyright, non-commercial; existing `AlbertaProvider` refactors onto this |
 | `custom_nl` | Per-station CSV | `SRC-NL-ADRS` | current, watertemp | 2,005 rows @692 ms; carries `WATER_TEMP` | OGL-NL |
 | `custom_mb` | AGOL CSV + HTML/PDF | `SRC-MB-FLOODINFO`, `SRC-MB-HFC` | current, flood | FloodInfo 248 rows @222 ms; HFC HTML/PDF 0 fields | OpenMB; HFC is unstructured (parse best-effort) |
 | `custom_qc` | CKAN + WFS | `SRC-QC-RSESQ`, `SRC-QC-GRHQ`, `SRC-QC-VIGILANCE` | groundwater, drainage, current | RSESQ 20 rows/53 fields @435 ms | CC-BY-4.0 (Québec) |
@@ -404,8 +404,8 @@ Part 1 catalogues nine categories beyond `current`/`historical`/`stations`. Each
 
 The service is currently public-good and non-commercial. Part 3 establishes that a hypothetical commercial tier is capped by the **most-restrictive upstream term**, and identifies the specific blockers [3]:
 
-- **Alberta `rivers.alberta.ca` (`SRC-AB-RIVERS`)** — Government of Alberta copyright; commercial = **NO** without written permission; `sanctioned=False` (residual). Full-cadence load behaviour is PENDING — Part 3a addendum (run `stress-20260916T105739Z` in progress) [3].
-- **Saskatchewan WSA (`SRC-SK-WSA`)** — SK Crown copyright; commercial = **NO** without written permission (`no-written-permission`); values scrape-only; `sanctioned=False` (residual). Full-cadence load behaviour is PENDING — Part 3a addendum (run `stress-20260916T105739Z` in progress) [3].
+- **Alberta `rivers.alberta.ca` (`SRC-AB-RIVERS`)** — Government of Alberta copyright; commercial = **NO** without written permission; `sanctioned=False` (residual). Full-cadence load behaviour is measured in the Part 3a addendum (run `stress-20260916T105739Z`, complete 2026-09-16) [3].
+- **Saskatchewan WSA (`SRC-SK-WSA`)** — SK Crown copyright; commercial = **NO** without written permission (`no-written-permission`); values scrape-only; `sanctioned=False` (residual). Full-cadence load behaviour is measured in the Part 3a addendum (run `stress-20260916T105739Z`, complete 2026-09-16) [3].
 - **Open-Meteo free tier** — commercial requires a paid plan; otherwise non-commercial only. Three sanctioned probes carry `non-commercial`: `SRC-OPEN-METEO` (forecast), `SRC-OPEN-METEO-AQI` (air quality), and `SRC-OPEN-METEO-ARCHIVE` (ERA5 historical) [3].
 - Everything else is commercial-OK **with attribution** (ECCC OGL-Canada/ECCC v2.1.1; provincial OGL-\<jurisdiction\>; MB OpenMB; QC CC-BY-4.0; MET Norway CC-BY-4.0/NLOD-2.0; HydroSHEDS; CIOOS). RivTemp is **conditional** (per-dataset licence + API key). Two flood sources (`SRC-MB-HFC`, `SRC-ON-CO`) carry `unknown` terms and SHALL be treated as non-commercial until clarified [3].
 
@@ -486,7 +486,7 @@ New Alembic migrations SHALL be authored (following the existing `alembic/versio
 - **Transient-retry methodology (Part 2 [2]).** The sanctioned harness's `http_probe` now **retries transient failures** — HTTP 5xx/429 and connect/read timeouts, bounded and honouring `Retry-After`. Enabling retries absorbed 18 transient GeoMet 5xx and took the authoritative run from **80/102 to 98/102** retrievable; there were no residual 5xx. Tests SHALL confirm the retry path is exercised and that a permanent failure (e.g. `dns_error`, `http_401`) is **not** retried into a false positive.
 - **Resolver unit tests.** The resolver (§2) SHALL have table-driven unit tests asserting: provincial-primary precedence per jurisdiction; QC provincial-only (no ECCC realtime admitted); and `COMMERCIAL_MODE` exclusion of AB/SK/Open-Meteo (§9).
 - **Historical depth tests.** Tests SHALL assert that `HISTORICAL_DEPTH_YEARS = 0` yields an unbounded fetch and a no-op prune, and that `N > 0` fetches `N` years and prunes to `N` (§4).
-- **Residual harness.** The 4 residual/scrape sources (`SRC-AB-RIVERS`, `SRC-BC-AQUARIUS`, `SRC-SK-WSA`, `SRC-AB-SNOW`) SHALL continue to be exercised only by the user-launched gentle harness (`tests/stress_test.py`), which runs with `retries = 0`, **skips a blocked target per-target** rather than aborting the whole run, and triggers a **global abort only on 3+ consecutive cross-target blocks** (Part 2 [2]). Its dated results become the **Part 3a addendum** (run `stress-20260916T105739Z`, in progress) [3] and SHALL NOT run in CI. (Note: the Open-Meteo rapid-burst is a stress-harness *target*, not a registered probe.)
+- **Residual harness.** The 4 residual/scrape sources (`SRC-AB-RIVERS`, `SRC-BC-AQUARIUS`, `SRC-SK-WSA`, `SRC-AB-SNOW`) SHALL continue to be exercised only by the user-launched gentle harness (`tests/stress_test.py`), which runs with `retries = 0`, **skips a blocked target per-target** rather than aborting the whole run, and triggers a **global abort only on 3+ consecutive cross-target blocks** (Part 2 [2]). Its dated results are the **Part 3a addendum** (run `stress-20260916T105739Z`, complete 2026-09-16: safe-max weather 4, AB/SK/BC ≥16, no blocks) [3] and SHALL NOT run in CI. (Note: the Open-Meteo rapid-burst is a stress-harness *target*, not a registered probe.)
 
 ### 10.5 Acceptance criteria (summary)
 
@@ -500,7 +500,7 @@ The implementation is complete when: (a) source priority is declarative and reso
 
 [2] WaterPulse Data Engineering, "WaterPulse Data-Source Standard (DS-STD-2026.1), Part 2 — Methodology & Test Suite," 2026-09-16. `http_probe` transient-retry policy and residual-harness (skip/abort) design. Persistent identifier: urn:waterpulse:ds-std:2026.1.
 
-[3] WaterPulse Data Engineering, "WaterPulse Data-Source Standard (DS-STD-2026.1), Part 3 — Results & Verified Standard," 2026-09-16. Per-source coverage, usage rights, and monetization; residual load measurements pending the dated Part 3a addendum (run `stress-20260916T105739Z`, in progress). Persistent identifier: urn:waterpulse:ds-std:2026.1.
+[3] WaterPulse Data Engineering, "WaterPulse Data-Source Standard (DS-STD-2026.1), Part 3 — Results & Verified Standard," 2026-09-16. Per-source coverage, usage rights, and monetization; residual load measurements published in the dated Part 3a addendum (run `stress-20260916T105739Z`, complete 2026-09-16). Persistent identifier: urn:waterpulse:ds-std:2026.1.
 
 [4] Environment and Climate Change Canada / Meteorological Service of Canada, "GeoMet — OGC API," Government of Canada. [Online]. Available: https://api.weather.gc.ca . Accessed: 2026-09-16.
 

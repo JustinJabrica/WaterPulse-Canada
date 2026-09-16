@@ -22,7 +22,7 @@
 
 ## Abstract
 
-This part reports the measured outcome of the DS-STD-2026.1 coverage evaluation and derives the normative, evidence-backed data-source recommendation for WaterPulse-Canada. In a single sanctioned run (`probes-20260916T104357Z`, 2026-09-16), **98 of 102 sanctioned source probes were retrievable in 631.4 s**, exercising a registry of **106 probes (102 sanctioned + 4 residual)** spanning **41 distinct Source IDs** across 12 data categories and all 13 Canadian provinces/territories. The results confirm the standard's core architecture: Environment and Climate Change Canada / Water Survey of Canada (ECCC/WSC) form a deep, commercially-licensable historical and real-time backbone — HYDAT alone returns 1,779,871 archived records over 6,478 stations from 1860 (a 167-year span, 106 fields), and ECCC's national climate-daily archive returns 184,672,664 records — while a small number of provinces (AB, BC-partial, MB, ON, QC, NL) add a genuine programmatic provincial river feed and the remainder are ECCC-primary. Québec is confirmed as the standing exception: ECCC's real-time Datamart carries only 15 QC hydrometric stations (9,548 hourly rows measured), so QC river data SHALL be sourced provincially from Vigilance. The four non-retrievable probes are individually diagnosed (a DNS-unresolvable federal groundwater host and an API-key-gated river-temperature service) and none invalidate a recommended primary source; the four previously-broken soft-negatives (CRID, Lake Ice Database, ECCC water-prediction, Conservation Ontario) are now fully retrievable. Adding bounded retry logic to the probe transport absorbed 18 transient GeoMet 5xx responses and took the full run from 80/102 to 98/102 with no residual 5xx. The historical requirement (≥15 historical sources) is satisfied with 19 retrievable historical probes. This part closes with the verified per-jurisdiction × per-category normative matrix, a non-commercial-versus-commercial monetization finding, and the status of the residual full-cadence stress harness (run `stress-20260916T105739Z` **in progress**; results will be appended as dated Addendum, Part 3a).
+This part reports the measured outcome of the DS-STD-2026.1 coverage evaluation and derives the normative, evidence-backed data-source recommendation for WaterPulse-Canada. In a single sanctioned run (`probes-20260916T104357Z`, 2026-09-16), **98 of 102 sanctioned source probes were retrievable in 631.4 s**, exercising a registry of **106 probes (102 sanctioned + 4 residual)** spanning **41 distinct Source IDs** across 12 data categories and all 13 Canadian provinces/territories. The results confirm the standard's core architecture: Environment and Climate Change Canada / Water Survey of Canada (ECCC/WSC) form a deep, commercially-licensable historical and real-time backbone — HYDAT alone returns 1,779,871 archived records over 6,478 stations from 1860 (a 167-year span, 106 fields), and ECCC's national climate-daily archive returns 184,672,664 records — while a small number of provinces (AB, BC-partial, MB, ON, QC, NL) add a genuine programmatic provincial river feed and the remainder are ECCC-primary. Québec is confirmed as the standing exception: ECCC's real-time Datamart carries only 15 QC hydrometric stations (9,548 hourly rows measured), so QC river data SHALL be sourced provincially from Vigilance. The four non-retrievable probes are individually diagnosed (a DNS-unresolvable federal groundwater host and an API-key-gated river-temperature service) and none invalidate a recommended primary source; the four previously-broken soft-negatives (CRID, Lake Ice Database, ECCC water-prediction, Conservation Ontario) are now fully retrievable. Adding bounded retry logic to the probe transport absorbed 18 transient GeoMet 5xx responses and took the full run from 80/102 to 98/102 with no residual 5xx. The historical requirement (≥15 historical sources) is satisfied with 19 retrievable historical probes. This part closes with the verified per-jurisdiction × per-category normative matrix, a non-commercial-versus-commercial monetization finding, and the residual full-cadence stress harness result (run `stress-20260916T105739Z` **complete 2026-09-16**; safe-max weather 4 / BC 16 / SK 16 / AB 16, zero IP-flagging — full detail in the dated Part 3a addendum, §10).
 
 ## Index Terms
 
@@ -367,8 +367,8 @@ This section is normative. RFC-2119 [25] key words apply. Recommendations are de
 
 | Juris. | Stations (recommended) | Real-time / current (primary → backup) | Historical (recommended) | Flag |
 |---|---|---|---|---|
-| AB | GeoMet hydrometric stations (1,104) | ECCC Datamart (AB) → GeoMet realtime · *(rivers.alberta.ca = non-commercial, intermittent; residual, PENDING Part 3a)* | HYDAT → GeoMet | AB provincial feed is non-commercial/residual |
-| BC | GeoMet hydrometric stations (2,324) | ECCC Datamart (BC) → GeoMet realtime · *(BC AQUARIUS = undocumented; residual, PENDING Part 3a)* | HYDAT → GeoMet | BC provincial = partial |
+| AB | GeoMet hydrometric stations (1,104) | ECCC Datamart (AB) → GeoMet realtime · *(rivers.alberta.ca = non-commercial, intermittent; residual, measured in Part 3a (§10))* | HYDAT → GeoMet | AB provincial feed is non-commercial/residual |
+| BC | GeoMet hydrometric stations (2,324) | ECCC Datamart (BC) → GeoMet realtime · *(BC AQUARIUS = undocumented; residual, measured in Part 3a (§10))* | HYDAT → GeoMet | BC provincial = partial |
 | MB | GeoMet hydrometric stations (659) | **MB FloodInfo** → ECCC Datamart (MB) | HYDAT → GeoMet | Provincial-primary (OpenMB, commercial-OK) |
 | NB | GeoMet hydrometric stations (144) | ECCC Datamart (NB) | HYDAT → GeoMet | ECCC-primary |
 | NL | GeoMet hydrometric stations (230) | **NL ADRS** → ECCC Datamart (NL) | HYDAT → GeoMet | Provincial-primary; ADRS carries water-temp |
@@ -378,7 +378,7 @@ This section is normative. RFC-2119 [25] key words apply. Recommendations are de
 | ON | **ON SWMC KiWIS** (4,436) + GeoMet (1,119) | ECCC Datamart (ON) → KiWIS timeseries | HYDAT → GeoMet | KiWIS is the richer registry |
 | PE | GeoMet hydrometric stations (43) | ECCC Datamart (PE) | HYDAT → GeoMet | ECCC-primary |
 | **QC** | GeoMet hydrometric stations (1,001) | **QC Vigilance (provincial-only)** — ECCC Datamart carries only 15 QC stations | HYDAT → GeoMet | **EXCEPTION — provincial-only** |
-| SK | GeoMet hydrometric stations (748) | ECCC Datamart (SK) · *(WSA = scrape-only, non-commercial; residual, PENDING Part 3a)* | HYDAT → GeoMet | SK provincial values are scrape-only |
+| SK | GeoMet hydrometric stations (748) | ECCC Datamart (SK) · *(WSA = scrape-only, non-commercial; residual, measured in Part 3a (§10))* | HYDAT → GeoMet | SK provincial values are scrape-only |
 | YT | GeoMet hydrometric stations (114) | ECCC Datamart (YT) | HYDAT → GeoMet | ECCC-primary |
 
 ### 7.3 Environmental-context recommendation (per category)
@@ -388,7 +388,7 @@ This section is normative. RFC-2119 [25] key words apply. Recommendations are de
 | weather | Open-Meteo (27-field contract) | ECCC City Page; MET Norway; BC ASWS TA (BC stations) | BC (ASWS TA) | Open-Meteo non-commercial; City Page/MET Norway/BC ASWS commercial-OK (§6) |
 | aqi | ECCC AQHI (native AQHI scale) | Open-Meteo AQI (US-AQI; scale-convert) | — | AQHI commercial-OK; Open-Meteo non-commercial |
 | precip | ECCC GeoMet climate-daily/hourly/monthly | RDPA/CaPA gridded; BC ASWS PC (BC) | BC (ASWS PC) | Commercial-OK (OGL-Canada / OGL-BC) |
-| snow | BC ASWS SW/SD (near-real-time SWE + depth) | CanSWE (historical SWE, 1928→) | BC (ASWS); AB (snow pillows — residual, PENDING Part 3a) | Commercial-OK |
+| snow | BC ASWS SW/SD (near-real-time SWE + depth) | CanSWE (historical SWE, 1928→) | BC (ASWS); AB (snow pillows — residual, measured in Part 3a (§10)) | Commercial-OK |
 | ice | CRID (river ice, 1894→) | CIS ice-thickness; Lake Ice DB | — | Commercial-OK; all three ice sources now retrievable |
 | drainage | NHN + WSC basins (gauge-keyed) | HydroSHEDS | BC FWA, ON OIH, QC GRHQ | Commercial-OK |
 | groundwater | **GIN WMS (44 layers, `gin.geosciences.ca`)** | ON PGMN; QC RSESQ | ON (PGMN), QC (RSESQ) | Commercial-OK; **GSC SensorThings (`mon.geosciences.ca`) DNS-failed — do not rely** |
@@ -397,7 +397,7 @@ This section is normative. RFC-2119 [25] key words apply. Recommendations are de
 
 ### 7.4 Consolidated normative matrix (13 P/T × 12 categories)
 
-Cell = recommended source (code); **(P)** = provincial-primary; *(res)* = provincial feed is residual/non-commercial (ECCC is the retrievable primary; measurement PENDING Part 3a); **QC-only** = provincial-only per the Québec exception; `—` = no jurisdiction-specific source, use the national recommendation in §7.3. Legend below the table.
+Cell = recommended source (code); **(P)** = provincial-primary; *(res)* = provincial feed is residual/non-commercial (ECCC is the retrievable primary; measurement measured in Part 3a (§10)); **QC-only** = provincial-only per the Québec exception; `—` = no jurisdiction-specific source, use the national recommendation in §7.3. Legend below the table.
 
 | Juris. | stations | current | historical | weather | aqi | precip | snow | ice | drainage | groundwater | watertemp | flood |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
@@ -417,7 +417,7 @@ Cell = recommended source (code); **(P)** = provincial-primary; *(res)* = provin
 
 **Legend.** GM-S = ECCC GeoMet hydrometric stations · DM = ECCC Datamart real-time CSV (hourly primary, daily backfill) · HY/GM = HYDAT (deep archive) via GeoMet OGC API · OM/CP = Open-Meteo (non-commercial) / ECCC City Page (commercial) · AQHI = ECCC AQHI · CLIM = ECCC GeoMet climate · BC-PC = BC ASWS accumulated-precip CSV · CanSWE = national SWE · BC-ASWS = BC ASWS SW/SD (SWE + depth) · AB-SNOW = Alberta snow pillows (residual) · CRID = Canadian River Ice Database · NHN = National Hydro Network (+ WSC basins) · GIN = Groundwater Information Network WMS (`gin.geosciences.ca`) · CIOOS = CIOOS Atlantic ERDDAP · ECCC-WP = ECCC water-prediction (40 WMS layers) / NRCan FHIMP · AB-R = rivers.alberta.ca · AQ = BC AQUARIUS · MB-FI = MB FloodInfo · MB-HFC = MB Hydrologic Forecast Centre · NL-ADRS = NL ADRS · KiWIS = ON SWMC KiWIS · ON-OIH = Ontario Integrated Hydrology · ON-PGMN = Ontario PGMN · CO = Conservation Ontario (now retrievable; licence unspecified) · QC-VIG = Québec Vigilance · QC-GRHQ = QC hydro network · QC-RSESQ = Québec RSESQ · BC-FWA/-RFC = BC atlas / river-forecast.
 
-**Notes on the matrix.** (a) The single **QC-only** cell (QC/current) is the Québec exception and is normative. (b) `*(res)*` cells (AB, BC, SK current; AB snow) mean the provincial feed exists but is residual/non-commercial/intermittent; the retrievable, commercially-safe primary is ECCC Datamart (or, for AB snow, CanSWE) until the full-cadence stress harness (§8) characterizes the provincial feeds — those measurements are **PENDING — Part 3a addendum (run `stress-20260916T105739Z` in progress)**. (c) `ECCC-WP`, `CRID`, and `CO` are all now retrievable in this run (no outstanding deeper-query follow-up). (d) Groundwater across all jurisdictions relies on **GIN** (`gin.geosciences.ca`), not the DNS-failed GSC SensorThings host (`mon.geosciences.ca`).
+**Notes on the matrix.** (a) The single **QC-only** cell (QC/current) is the Québec exception and is normative. (b) `*(res)*` cells (AB, BC, SK current; AB snow) mean the provincial feed exists but is residual/non-commercial/intermittent; the retrievable, commercially-safe primary is ECCC Datamart (or, for AB snow, CanSWE) until the full-cadence stress harness (§8) characterizes the provincial feeds — those measurements are **measured in the Part 3a addendum (run `stress-20260916T105739Z`, complete 2026-09-16)**. (c) `ECCC-WP`, `CRID`, and `CO` are all now retrievable in this run (no outstanding deeper-query follow-up). (d) Groundwater across all jurisdictions relies on **GIN** (`gin.geosciences.ca`), not the DNS-failed GSC SensorThings host (`mon.geosciences.ca`).
 
 ## 8. Residual-harness status
 
@@ -434,7 +434,7 @@ The **Open-Meteo rapid-burst** exercise is a **stress-harness target**, *not* a 
 
 These four sources are exercised only by the manual/overnight gentle stress harness (`waterpulse-backend/tests/stress_test.py`): a graduated knee-finder with random 10–30 min gaps, a descriptive User-Agent, `Retry-After` compliance, no cache-bypass headers, and `retries = 0` (so a source's first-response failure signature is recorded unmasked, unlike the sanctioned transport in §2). The harness now **skips a blocked target on a per-target basis** rather than aborting the whole run; a **global abort fires only on 3+ consecutive cross-target blocks**.
 
-**Full-cadence run in progress.** The full residual run — `run_id = stress-20260916T105739Z`, targets in order **weather → BC → SK → AB**, with 10–30 min inter-request gaps — is **currently in progress** and its results are **PENDING**. They will be published as a dated **Part 3a addendum** (§10). Until then, every residual measurement (the empirically-characterized safe sustainable request rate and the failure signatures for the AB/SK/BC scrape sources and the AB snow-pillow feed) is **PENDING — Part 3a addendum (run `stress-20260916T105739Z` in progress)**, and the `*(res)*` matrix cells (§7.4) stand as provisional. No residual results are asserted in this Part 3.
+**Full-cadence run complete (2026-09-16).** The full residual run — `run_id = stress-20260916T105739Z`, targets in order **weather → BC → SK → AB**, real 10–30 min inter-request gaps — completed in ≈8.6 h (26 bunches, 139 requests, `aborted=False`, no blocked targets). Its measured safe-max, graduated-ladder detail, and failure signatures are reported in the **Part 3a addendum (§10)**. Headline: safe-max **weather 4** (knee at c=8, 5xx), **BC/SK/AB ≥16** (no throttle within the c=16 cap), and **zero connection-refusals/blocks** across ~8.6 h — so the `*(res)*` matrix cells (§7.4) are confirmed: the provincial scrape feeds are reachable at gentle rates but remain residual/non-commercial, and ECCC stays the commercially-safe primary.
 
 ## 9. Recommendations
 
@@ -444,19 +444,82 @@ These four sources are exercised only by the manual/overnight gentle stress harn
 4. **Re-test the two hard-negative endpoints.** Re-test **GSC SensorThings** (`mon.geosciences.ca`, `dns_error`) periodically and treat it as unstable until it resolves; and **provision a DataStream `x-api-key`** (via the DataStream web form, ~2 req/s) if RivTemp river-temperature is wanted. The four v1.0 soft-negatives (CRID, Lake Ice, ECCC water-prediction, Conservation Ontario) are resolved and need no follow-up.
 5. **Wire the newly-retrievable flood and ice sources.** Promote **ECCC water-prediction** (40 WMS layers via GeoMet WMS GetCapabilities — WCPS/OHPS/DHPS/RIOPS/CIOPS/surge) as the national flood/water-prediction backbone, and adopt **CRID** (1894→) plus the **Lake Ice Database** as the ice sources.
 6. **Defer the weather/AQI field-contract choice to the "Implementation Specification"** (§6.3), and standardize on the AQHI scale for AQI.
-7. **Launch the full-cadence residual harness** (§8, run `stress-20260916T105739Z`, now in progress) and publish Part 3a with the measured safe request rates and failure signatures for the AB/SK/BC scrape sources and the AB snow-pillow feed.
+7. **Completed the full-cadence residual harness** (§8, run `stress-20260916T105739Z`, complete 2026-09-16); Part 3a (§10) reports the measured safe request rates (weather 4; AB/SK/BC ≥16) and failure signatures (too-fast → `http_429`; wrong-station → `http_404_upstream_missing`; overload → `http_5xx`) for the scrape sources and the AB snow-pillow feed.
 8. **Enforce ECCC acceptable-use limits** in the ingestion scheduler: contact MSC before approaching ~86,400 requests/day (~1 req/s), send no cache-bypass headers, and do not bulk-retrieve WMS tiles [8]. The sanctioned transport's bounded retries (§2) honour `Retry-After` and MUST NOT be widened into an aggressive retry loop.
 
-## 10. Part 3a addendum — residual full-cadence results (PENDING)
+## 10. Part 3a addendum — residual full-cadence results (COMPLETE, 2026-09-16)
 
-**Status: PENDING.** This section is a reserved placeholder for the dated Part 3a addendum. The full-cadence residual run `stress-20260916T105739Z` (targets weather → BC → SK → AB, 10–30 min gaps; §8) is **in progress at time of publication of this Part 3**. When it completes, Part 3a will report, for each of the four residual sources (`SRC-AB-RIVERS`, `SRC-BC-AQUARIUS`, `SRC-SK-WSA`, `SRC-AB-SNOW`):
+**Status: COMPLETE.** The full-cadence gentle residual run `stress-20260916T105739Z` (targets
+`weather → BC → SK → AB`, real 10–30 min randomized gaps, `retries=0`) ran to completion over
+**≈8.6 h** (30,917 s): **26 bunches, 139 requests, `aborted=False`, `blocked_targets=[]`**.
+This addendum reports the measured safe-max per target, the graduated-ladder detail, the
+bad-input failure signatures, and the failure-reason catalogue. It confirms the provisional
+`*(res)*` matrix cells in §7.4.
 
-- the empirically-characterized safe sustainable request rate (the "knee" of the graduated ladder);
-- the observed failure/block signatures (status codes, `Retry-After` behaviour, connection refusals);
-- any per-target skips and whether the global 3-consecutive-cross-target-block abort fired;
-- a confirmation or revision of the provisional `*(res)*` matrix cells in §7.4.
+### 10.1 Recommended safe-max concurrency per target
 
-**No residual results are stated here.** Any figure attributed to the residual run before Part 3a is published is out of scope and MUST NOT be relied upon. This standard's normative content (§7) does not depend on the residual results: every `*(res)*` cell already has a retrievable, commercially-safe ECCC primary.
+| Target (source) | Safe-max | Knee | Notes |
+|---|---|---|---|
+| **weather** (Open-Meteo) | **4** | **c=8** (50% failure, 4× `http_5xx`) | Only target to knee; back-off honoured, ladder stopped at c=8 |
+| **BC** (AQUARIUS) | **≥16** | none in ladder | 16/16 OK at 31 req/s, p95 367 ms — most robust at scale |
+| **SK** (wsask.ca htmlwidget) | **≥16** | none (throttle) | Failures were benign per-station `http_404_bad_path`, not throttling |
+| **AB** (rivers.alberta.ca) | **≥16** | none (throttle) | 14/16 OK at 36 req/s, p95 253 ms; failures = benign per-station 404s |
+
+"≥16" = no throttle observed up to the ladder cap of 16; the true knee (if any) is above 16 and
+was not probed (the harness intentionally caps at 16 for gentleness).
+
+### 10.2 Graduated-ladder detail (per bunch)
+
+| Target | c | ok/req | req/s | p95 ms | reasons |
+|---|---|---|---|---|---|
+| weather | 1 / 2 / 4 | 1/1 · 2/2 · 4/4 | 1.4 / 1.9 / 4.3 | 462 / 788 / 767 | all `ok` |
+| weather | **8** | **4/8** | 4.6 | 1460 | **4× `http_5xx` → KNEE** |
+| BC | 1→8 | 1/1 · 2/2 · 4/4 · 8/8 | 1.3 → 13.2 | ≤502 | all `ok` |
+| BC | 16 | 16/16 | 31.2 | 367 | all `ok` |
+| SK | 1 / 2 | 1/1 · 2/2 | 1.2 / 3.3 | ≤454 | all `ok` |
+| SK | 4 / 8 / 16 | 3/4 · 6/8 · 11/16 | 3.0 / 5.2 / 7.5 | 344 / 596 / 1838 | `http_404_bad_path` (missing per-station hydrograph pages) |
+| AB | 1 | 1/1 | 2.1 | 250 | `ok` |
+| AB | 2 / 4 / 8 | 1/2 · 3/4 · 6/8 | 3.3 / 11.9 / 18.7 | ≤391 | `http_404_bad_path` (missing per-station JSON) |
+| AB | 16 | 14/16 | 35.9 | 253 | 2× `http_404_bad_path`, else `ok` |
+
+### 10.3 Bad-input probe failure signatures (the "why it fails" catalogue)
+
+| Probe | Result | Signature learned |
+|---|---|---|
+| weather bad-path (`lat=999`) | `http_400_bad_request` | Open-Meteo validates params → **400** for a malformed request |
+| BC bad-path (`/Data/DOES_NOT_EXIST`) | `ok` (HTTP 200) | AQUARIUS returns a generic 200 for unknown paths — **no clean 404** (caution: absence of 404 ≠ success) |
+| SK / AB invalid-station (`99ZZ999`) | `http_404_upstream_missing` | **wrong station number** → 404 on an otherwise-valid URL shape |
+| SK / AB bad-path | `http_404_bad_path` | **wrong address** (our malformed URL) → 404 |
+| **weather rapid-burst** (25 concurrent, no jitter) | **15/25 ok + 10× `http_429`** at 38 req/s | **"requested too fast"** → Open-Meteo returns **429 rate-limited** (recoverable via `Retry-After`), NOT a block |
+
+### 10.4 Failure-reason catalogue (whole run, 139 requests)
+
+`ok` 106 · `http_404_bad_path` 16 · `http_429_rate_limited` 10 · `http_5xx_server` 4 ·
+`http_404_upstream_missing` 2 · `http_400_bad_request` 1.
+
+### 10.5 Findings
+
+1. **No IP flagging.** Over ~8.6 h at 10–30 min gaps: **zero** connection-refusals, **zero** 403,
+   `blocked_targets=[]`, no abort. The gentle-cadence anti-flag design (descriptive UA + contact,
+   randomized long gaps, honour `Retry-After`, low concurrency) kept the egress IP unflagged.
+2. **Alberta did not refuse in this window.** `rivers.alberta.ca` served up to c=16 (≈36 req/s,
+   ~210–253 ms) with only benign per-station 404s — **no `connect_refused`**. This corroborates
+   the original diagnosis: the earlier `ConnectError`s were driven by a *compounding concurrent
+   burst* (historical 20×2 fan-out overlapping the 50-wide readings refresh), not a standing block.
+   AB tolerates gentle access; it must not be hammered concurrently.
+3. **Only Open-Meteo throttles under load** — `5xx` at c=8 (→ safe-max 4) and `429` under a
+   25-wide rapid burst. Both are recoverable, reinforcing Open-Meteo as an exact-coordinate option
+   used *gently* (and its free-tier non-commercial limit remains the licensing constraint).
+4. **The `*(res)*` matrix cells (§7.4) are confirmed:** the AB/SK/BC provincial scrape feeds and the
+   AB snow-pillow feed are reachable at gentle rates, but remain residual/non-commercial; ECCC stays
+   the retrievable, commercially-safe primary. The normative recommendations in §7 are unchanged.
+5. **SK/AB per-station 404s are data gaps, not errors:** some sampled station IDs lack that exact
+   hydrograph/JSON URL; the knee-detector correctly excludes `http_404_bad_path` from throttle
+   signals, so those ladders completed to c=16.
+
+**Recommended operating rates (gentle, IP-safe):** weather ≤4 concurrent; AB/SK/BC ≤16 concurrent
+with ≥10 min spacing between bulk sweeps; always honour `Retry-After`; never overlap a provincial
+sweep with the app's 10-min scheduler against the same host.
 
 ## 11. References
 
@@ -518,4 +581,4 @@ These four sources are exercised only by the manual/overnight gentle stress harn
 
 ---
 
-*End of Part 3. The full residual full-cadence-harness results will be published as Part 3a (DS-STD-2026.1, Part 3a), a dated addendum to this document (run `stress-20260916T105739Z`, in progress).*
+*End of Part 3, including the Part 3a residual full-cadence-harness addendum (§10; run `stress-20260916T105739Z`, complete 2026-09-16).*

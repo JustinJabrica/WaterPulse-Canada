@@ -84,9 +84,9 @@ and appear in uppercase only when normative.
 - **Part 3 — Results & Verified Standard**: the dated results of the authoritative run
   (`probes-20260916T104357Z`) rolled up into the verified standard, plus the residual
   safe-max recommendations. Part 3 consumes the artifacts defined in §8 of this Part. The
-  full-cadence residual run (`stress-20260916T105739Z`) lands there as a dated **Part 3a
-  addendum**; where this Part refers to residual *measurements*, they are marked "PENDING —
-  Part 3a addendum".
+  full-cadence residual run (`stress-20260916T105739Z`) landed there as the dated **Part 3a
+  addendum** (complete 2026-09-16); residual *measurements* are reported in Part 3a §10
+  (safe-max: weather 4, BC/SK/AB ≥16; no blocks, no abort).
 - **Implementation Specification**: the companion engineering spec that maps verified
   sources onto the running app's providers and schedulers.
 
@@ -408,7 +408,7 @@ returning the expected 404). The **full-cadence residual run is IN PROGRESS** �
 `stress-20260916T105739Z`, targets in order `weather → bc → sk → ab`, with the real 10–30 min
 gaps — and its safe-max and failure-signature results **land as the dated Part 3a addendum**.
 Any residual measurement referenced elsewhere in this standard is therefore
-**PENDING — Part 3a addendum (run `stress-20260916T105739Z` in progress)**.
+**measured in the Part 3a addendum (run `stress-20260916T105739Z`, complete 2026-09-16)**.
 
 ---
 
@@ -729,7 +729,7 @@ reconstructable from the evidence.
 ### 8.2 Residual run (`stress-<UTC-timestamp>/`)
 
 The in-progress full-cadence directory is `tests/logs/stress-20260916T105739Z/`; its rolled
-values are **PENDING — Part 3a addendum**.
+values are **measured in the Part 3a addendum (2026-09-16)**.
 
 | Artifact | Grain | Contents |
 |---|---|---|

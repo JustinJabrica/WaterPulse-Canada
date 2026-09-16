@@ -80,7 +80,7 @@ herein except where they explicitly amend a numbered clause of this Part.
 |------|-------|-------|
 | 1 | Standard & Reconnaissance | This document: architecture, registry, datasheets, coverage, cadence, QA/QC, licensing matrix, risk register, references. |
 | 2 | Methodology & Test Suite | Probe harness design, retry/backoff semantics, residual-harness stress cadence, reproducibility. |
-| 3 | Results & Verified Standard | Verified results and the dated residual-harness overnight addendum (**Part 3a**, run `stress-20260916T105739Z`, in progress). |
+| 3 | Results & Verified Standard | Verified results and the dated residual-harness addendum (**Part 3a**, run `stress-20260916T105739Z`, complete 2026-09-16). |
 | — | Implementation Specification | Companion engineering spec mapping the standard onto the ingestion codebase. |
 
 **Measurement provenance for this Part.** Unless a figure is explicitly labelled *advertised*, every
@@ -368,15 +368,15 @@ Role legend: **P** = primary, **B** = backup/validation, **E** = enrichment. Sta
 These four probes are **not** part of the sanctioned acquisition path and are exercised only by the
 manual/overnight stress harness (`tests/stress_test.py`). They are retained in the registry for
 completeness and for the Part 3a dated addendum. Their full-cadence residual measurements are
-**PENDING — Part 3a addendum (run `stress-20260916T105739Z` in progress; targets weather→bc→sk→ab,
-10–30 min gaps).**
+**reported in the Part 3a addendum (§10; run `stress-20260916T105739Z`, complete 2026-09-16;
+targets weather→bc→sk→ab, 10–30 min gaps) — safe-max: weather 4, BC 16, SK 16, AB 16; no blocks, no abort.**
 
 | Source ID | Publisher | Nature | Licence / commercial | Measured status |
 |-----------|-----------|--------|----------------------|-----------------|
-| SRC-AB-RIVERS | Government of Alberta (rivers.alberta.ca) | `ListStationsAndAlerts` per-station JSON discovery; **primary AB** if used, but scrape-class | GoA copyright; **commercial = NO** | PENDING — Part 3a addendum; historically intermittent connection refusal (bad path → 404) |
-| SRC-BC-AQUARIUS | British Columbia (ENV) | Undocumented AQUARIUS WebPortal export; **partial BC primary** | OGL-BC; commercial = yes | PENDING — Part 3a addendum; undocumented endpoint |
-| SRC-SK-WSA | Water Security Agency (wsask.ca) | dygraphs htmlwidget scrape; **primary SK** values are scrape-only | SK Crown copyright; **commercial = NO** (written permission) | PENDING — Part 3a addendum; scrape-only |
-| SRC-AB-SNOW | Government of Alberta (rivers.alberta.ca) | Alberta River Basins snow pillows (residual) | OGL-Alberta (**unconfirmed**); commercial = unknown | PENDING — Part 3a addendum |
+| SRC-AB-RIVERS | Government of Alberta (rivers.alberta.ca) | `ListStationsAndAlerts` per-station JSON discovery; **primary AB** if used, but scrape-class | GoA copyright; **commercial = NO** | measured in the Part 3a addendum (2026-09-16); historically intermittent connection refusal (bad path → 404) |
+| SRC-BC-AQUARIUS | British Columbia (ENV) | Undocumented AQUARIUS WebPortal export; **partial BC primary** | OGL-BC; commercial = yes | measured in the Part 3a addendum (2026-09-16); undocumented endpoint |
+| SRC-SK-WSA | Water Security Agency (wsask.ca) | dygraphs htmlwidget scrape; **primary SK** values are scrape-only | SK Crown copyright; **commercial = NO** (written permission) | measured in the Part 3a addendum (2026-09-16); scrape-only |
+| SRC-AB-SNOW | Government of Alberta (rivers.alberta.ca) | Alberta River Basins snow pillows (residual) | OGL-Alberta (**unconfirmed**); commercial = unknown | measured in the Part 3a addendum (2026-09-16) |
 
 **Note on the Open-Meteo rapid-burst.** The Open-Meteo "too-fast" rapid-burst is a **stress-harness
 target** used for rate-limit knee-finding; it is **NOT a registered probe** and is therefore counted
@@ -515,7 +515,7 @@ carry the tag *(MEASURED)*; everything else is advertised.
 - **Endpoints / API version:** Per-station JSON on rivers.alberta.ca; no documented public API version.
 - **Formats / quirks:** Per-station JSON; historically **intermittent connection refusal**; bad path
   returns 404. Behind an "authorized users only" gate. Full-cadence residual measurement is
-  **PENDING — Part 3a addendum (run `stress-20260916T105739Z` in progress)**.
+  **measured in the Part 3a addendum (run `stress-20260916T105739Z`, complete 2026-09-16)**.
 - **Field dictionary:** station, level, flow, timestamp (as published per station).
 - **Caveats:** GoA copyright; **commercial = NO** without written permission; non-commercial reuse OK
   with attribution "Government of Alberta". Because of the intermittency and licence, ECCC Datamart is
@@ -1069,8 +1069,8 @@ endpoint changes. These are genuine findings, surfaced not hidden.
   alternative.
 - **F-2 — Alberta intermittent connection refusal.** `SRC-AB-RIVERS` (residual) has historically
   exhibited **intermittent connection refusal** (bad path → 404). It is a harness-only target and is
-  not part of the sanctioned run; its full-cadence residual measurement is **PENDING — Part 3a addendum
-  (run `stress-20260916T105739Z` in progress)**. Combined with its non-commercial licence, ECCC
+  not part of the sanctioned run; its full-cadence residual measurement is **measured in the Part 3a addendum (2026-09-16)
+  (run `stress-20260916T105739Z`, complete 2026-09-16)**. Combined with its non-commercial licence, ECCC
   Datamart AB is the reliable sanctioned AB path.
 - **F-3 — ECCC legacy Alberta WaterlevelRecords POST removed (Apr 2026).** The legacy ECCC Alberta
   `WaterlevelRecords` POST endpoint was **removed in April 2026**. Pipelines SHALL NOT depend on it;
@@ -1294,6 +1294,6 @@ https://creativecommons.org/licenses/by/4.0/ Accessed: 2026-09-16.
 
 *End of DS-STD-2026.1 Part 1 — Standard & Reconnaissance (v1.1; PID `urn:waterpulse:ds-std:2026.1`).
 Measured figures are from run `probes-20260916T104357Z` (2026-09-16); advertised figures are labelled
-as such. Residual measurements are PENDING — Part 3a addendum (run `stress-20260916T105739Z` in
+as such. Residual measurements are measured in the Part 3a addendum (2026-09-16) (run `stress-20260916T105739Z` in
 progress). Cite as: WaterPulse Data Engineering, "WaterPulse Data-Source Standard (DS-STD-2026.1),
 Part 1: Standard & Reconnaissance," v1.1, 2026-09-16.*
