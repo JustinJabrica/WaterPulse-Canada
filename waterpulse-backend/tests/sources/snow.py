@@ -121,56 +121,67 @@ async def probe_canswe(spec, ctx: ProbeContext) -> TestResult:
             )
 
 
-# ── (b) BC Automated Snow Weather Stations (SWE) ────────────────────
-BC_ASWS_SW = "https://www.env.gov.bc.ca/wsd/data_searches/snow/asws/data/SW.csv"
+# ── (b) BC Automated Snow Weather Stations (near-real-time wide CSVs) ─
+BC_ASWS_BASE = "https://www.env.gov.bc.ca/wsd/data_searches/snow/asws/data"
+# One wide CSV per parameter (col 0 = date/time; each later col = a station).
+# SW/SD feed the "snow" category; PC → precip; TA → weather — one network, four
+# environmental variables, so all four are probed for full coverage.
+_ASWS_FILES = [
+    ("SW", "snow", "SWE (snow water equivalent)"),
+    ("SD", "snow", "snow depth"),
+    ("PC", "precip", "accumulated precipitation"),
+    ("TA", "weather", "air temperature"),
+]
 
 
-@register(
-    test_id="snow-bc-asws-swe",
-    category="snow",
-    source_id="SRC-BC-ASWS",
-    label="BC ASWS near-real-time SWE (wide CSV)",
-    jurisdiction="BC",
-    licence="Open Government Licence – British Columbia",
-    commercial_ok="yes",
-)
-async def probe_bc_asws(spec, ctx: ProbeContext) -> TestResult:
-    recs = []
-    async with build_client(timeout=ctx.request_timeout) as client:
-        f = await http_probe(ctx, client, BC_ASWS_SW, source_id=spec.source_id,
-                             category=spec.category, notes="ASWS SWE wide CSV")
-        recs.append(f.record)
-        if not f.ok:
-            return spec.result(
-                retrievable=False, reason_category=f.record.reason_category,
-                reason_detail=f.record.reason_detail, endpoint=BC_ASWS_SW, requests=recs,
-            )
-        try:
-            fields = fields_from_csv(f.text)
-            lines = [ln for ln in f.text.splitlines() if ln.strip()]
-            data = lines[1:] if len(lines) > 1 else []
-            # Layout: first column is the date/time; every column after it is a
-            # station, so the station count is the header width minus the date.
-            station_count = max(0, len(fields) - 1)
-            f.record.records_parsed = len(data)
-            reason = classify.OK if data else classify.OK_EMPTY
-            return spec.result(
-                retrievable=bool(data), reason_category=reason, endpoint=BC_ASWS_SW,
-                fields_found=fields, record_count=len(data), station_count=station_count,
-                latency_ms=f.record.latency_ms, sample=f.text[:800], requests=recs,
-                notes=("wide CSV: col 0 = date, each later col = a station; "
-                       "SD.csv (snow depth), PC.csv (precip), TA.csv (air temp) "
-                       "also exist at the same path"),
-                extra={"columns_after_date_are_stations": True,
-                       "sibling_files": ["SD.csv", "PC.csv", "TA.csv"]},
-            )
-        except Exception as exc:  # parsing only
-            reason, detail = classify.classify_exception(exc)
-            return spec.result(
-                retrievable=False, reason_category=classify.PARSE_ERROR,
-                reason_detail=detail, endpoint=BC_ASWS_SW, sample=f.text[:800],
-                latency_ms=f.record.latency_ms, requests=recs,
-            )
+def _make_asws(code: str, desc: str):
+    async def _probe(spec, ctx: ProbeContext) -> TestResult:
+        url = f"{BC_ASWS_BASE}/{code}.csv"
+        recs = []
+        async with build_client(timeout=ctx.request_timeout) as client:
+            f = await http_probe(ctx, client, url, source_id=spec.source_id,
+                                 category=spec.category, notes=f"ASWS {code}.csv wide CSV")
+            recs.append(f.record)
+            if not f.ok:
+                return spec.result(
+                    retrievable=False, reason_category=f.record.reason_category,
+                    reason_detail=f.record.reason_detail, endpoint=url, requests=recs,
+                )
+            try:
+                fields = fields_from_csv(f.text)
+                lines = [ln for ln in f.text.splitlines() if ln.strip()]
+                data = lines[1:] if len(lines) > 1 else []
+                # col 0 = date/time; every later column is a station.
+                station_count = max(0, len(fields) - 1)
+                f.record.records_parsed = len(data)
+                reason = classify.OK if data else classify.OK_EMPTY
+                return spec.result(
+                    retrievable=bool(data), reason_category=reason, endpoint=url,
+                    fields_found=fields, record_count=len(data), station_count=station_count,
+                    latency_ms=f.record.latency_ms, sample=f.text[:800], requests=recs,
+                    notes=f"BC ASWS {desc}: wide CSV, col 0 = date, each later col = a station",
+                    extra={"parameter": code, "columns_after_date_are_stations": True},
+                )
+            except Exception as exc:  # parsing only
+                _, detail = classify.classify_exception(exc)
+                return spec.result(
+                    retrievable=False, reason_category=classify.PARSE_ERROR,
+                    reason_detail=detail, endpoint=url, sample=f.text[:800],
+                    latency_ms=f.record.latency_ms, requests=recs,
+                )
+    return _probe
+
+
+for _code, _cat, _desc in _ASWS_FILES:
+    register(
+        test_id=f"{_cat}-bc-asws-{_code.lower()}",
+        category=_cat,
+        source_id="SRC-BC-ASWS",
+        label=f"BC ASWS {_desc} (wide CSV)",
+        jurisdiction="BC",
+        licence="Open Government Licence – British Columbia",
+        commercial_ok="yes",
+    )(_make_asws(_code, _desc))
 
 
 # ── (c) Alberta River Basins snow pillows (residual, sanctioned=False) ──

@@ -54,6 +54,34 @@ async def _probe(spec, ctx: ProbeContext) -> TestResult:
         )
 
 
+async def _probe_daily(spec, ctx: ProbeContext) -> TestResult:
+    """Daily bundle = last ~30 complete days + the current partial day."""
+    prov = spec.jurisdiction
+    url = f"{DATAMART}/{prov}/daily/{prov}_daily_hydrometric.csv"
+    recs = []
+    async with build_client(timeout=ctx.request_timeout) as client:
+        f = await http_probe(ctx, client, url, source_id=spec.source_id, category=spec.category)
+        recs.append(f.record)
+        if not f.ok:
+            return spec.result(
+                retrievable=False, reason_category=f.record.reason_category,
+                reason_detail=f.record.reason_detail, endpoint=url, requests=recs,
+            )
+        fields = fields_from_csv(f.text)
+        lines = [ln for ln in f.text.splitlines() if ln.strip()]
+        data = lines[1:] if len(lines) > 1 else []
+        stations = {ln.split(",", 1)[0] for ln in data if "," in ln}
+        f.record.records_parsed = len(data)
+        reason = classify.OK if data else classify.OK_EMPTY
+        return spec.result(
+            retrievable=bool(data), reason_category=reason, endpoint=url,
+            fields_found=fields, record_count=len(data), station_count=len(stations),
+            latency_ms=f.record.latency_ms, sample=f.text[:800], requests=recs,
+            notes="daily bundle = last ~30 complete days + current partial day",
+            extra={"expected_fields": EXPECTED_FIELDS},
+        )
+
+
 for _prov in PROVINCES:
     register(
         test_id=f"current-eccc-datamart-{_prov.lower()}",
@@ -64,3 +92,12 @@ for _prov in PROVINCES:
         licence="OGL-Canada / ECCC End-use Licence v2.1.1",
         commercial_ok="yes",
     )(_probe)
+    register(
+        test_id=f"current-eccc-datamart-daily-{_prov.lower()}",
+        category="current",
+        source_id="SRC-ECCC-DATAMART",
+        label=f"ECCC Datamart daily bulk CSV ({_prov})",
+        jurisdiction=_prov,
+        licence="OGL-Canada / ECCC End-use Licence v2.1.1",
+        commercial_ok="yes",
+    )(_probe_daily)

@@ -42,6 +42,8 @@ Citation / references:
 """
 from __future__ import annotations
 
+import re
+
 from tests.sources._base import (
     ProbeContext,
     fields_from_json,
@@ -52,52 +54,51 @@ from tests.stress import classify
 from tests.stress.http_client import build_client
 from tests.stress.metrics import TestResult
 
-# ── (a) ECCC GeoMet water-prediction collections ────────────────────
-GEOMET_COLLECTIONS = "https://api.weather.gc.ca/collections"
-_WATER_PRED_KEYS = ("water", "wcps", "ohps", "surge")
+# ── (a) ECCC GeoMet water-prediction WMS layers ─────────────────────
+# WCPS/OHPS/RIOPS/CIOPS/storm-surge are gridded WMS/coverage products, NOT
+# OGC-API-Features collections (the api.weather.gc.ca/collections catalogue
+# contains no such id — confirmed), so we enumerate them from the GeoMet WMS
+# GetCapabilities layer inventory (the same GetCapabilities technique the working
+# GIN groundwater probe uses). The caps document is large; timeout is raised.
+GEOMET_WMS = "https://geo.weather.gc.ca/geomet"
+_WATER_PRED_KEYS = ("WCPS", "OHPS", "DHPS", "RDWPS", "GDWPS", "RIOPS", "CIOPS", "SURGE")
 
 
 async def _probe_eccc_waterpred(spec, ctx: ProbeContext) -> TestResult:
     recs = []
-    async with build_client(timeout=ctx.request_timeout) as client:
+    params = {"SERVICE": "WMS", "VERSION": "1.3.0", "REQUEST": "GetCapabilities", "lang": "en"}
+    async with build_client(timeout=max(120.0, ctx.request_timeout)) as client:
         f = await http_probe(
-            ctx, client, GEOMET_COLLECTIONS, source_id=spec.source_id,
-            category=spec.category, params={"f": "json"}, from_metadata=True,
-            notes="OGC API collections catalogue",
+            ctx, client, GEOMET_WMS, source_id=spec.source_id,
+            category=spec.category, params=params, from_metadata=True,
+            notes="GeoMet WMS 1.3.0 GetCapabilities (water-prediction layers)",
         )
         recs.append(f.record)
         if not f.ok:
             return spec.result(
                 retrievable=False, reason_category=f.record.reason_category,
-                reason_detail=f.record.reason_detail, endpoint=GEOMET_COLLECTIONS,
-                requests=recs,
+                reason_detail=f.record.reason_detail, endpoint=GEOMET_WMS, requests=recs,
             )
-        try:
-            data = f.json()
-            collections = data.get("collections", []) if isinstance(data, dict) else []
-            water = []
-            for col in collections:
-                cid = str(col.get("id", "")) if isinstance(col, dict) else str(col)
-                if any(k in cid.lower() for k in _WATER_PRED_KEYS):
-                    water.append(cid)
-        except Exception as exc:  # pragma: no cover - defensive parse guard
-            reason, detail = classify.classify_exception(exc)
-            return spec.result(
-                retrievable=False, reason_category=classify.PARSE_ERROR,
-                reason_detail=detail, endpoint=GEOMET_COLLECTIONS,
-                sample=f.text[:800], requests=recs,
-            )
-        f.record.records_parsed = len(water)
-        reason = classify.OK if water else classify.OK_EMPTY
+        text = f.text or ""
+        names = re.findall(r"<Name>([^<]+)</Name>", text)
+        matched = sorted({n for n in names if any(k in n.upper() for k in _WATER_PRED_KEYS)})
+        is_caps = ("WMS_Capabilities" in text or "WMT_MS_Capabilities" in text
+                   or "<Layer" in text)
+        if not is_caps:
+            reason = classify.PARSE_ERROR
+        elif matched:
+            reason = classify.OK
+        else:
+            reason = classify.OK_EMPTY
+        f.record.records_parsed = len(matched)
         return spec.result(
-            retrievable=bool(water), reason_category=reason,
-            endpoint=GEOMET_COLLECTIONS, fields_found=water,
-            record_count=len(water),
-            latency_ms=f.record.latency_ms, sample=f.text[:800], requests=recs,
-            notes=f"{len(collections)} total GeoMet collections; "
-                  f"{len(water)} match water-prediction keys {_WATER_PRED_KEYS}",
-            extra={"match_keys": list(_WATER_PRED_KEYS),
-                   "total_collections": len(collections)},
+            retrievable=bool(matched), reason_category=reason, endpoint=GEOMET_WMS,
+            fields_found=matched[:40], record_count=len(matched),
+            latency_ms=f.record.latency_ms, sample="; ".join(matched[:20])[:800],
+            requests=recs,
+            notes=f"{len(matched)} water-prediction WMS layers "
+                  f"(WCPS/OHPS/DHPS/RIOPS/CIOPS/surge) of {len(names)} total <Name> in caps",
+            extra={"match_keys": list(_WATER_PRED_KEYS), "total_layer_names": len(names)},
         )
 
 
@@ -246,7 +247,7 @@ async def _probe_nrcan_fhimp(spec, ctx: ProbeContext) -> TestResult:
 
 # (e) Conservation Ontario flood forecasting & warning
 ON_CO_URL = ("https://conservationontario.ca/conservation-authorities/"
-             "flood-forecasting-and-operations")
+             "flood-erosion-management/flood-messages")
 
 
 async def _probe_on_co(spec, ctx: ProbeContext) -> TestResult:
