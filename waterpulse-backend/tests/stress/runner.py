@@ -88,6 +88,8 @@ async def run(cfg: RunConfig, log: StressLog, resume_from: int = 0) -> dict:
     schedule = build_schedule(cfg)
     gmin, gmax = cfg.gap_bounds()
     knee_hit: set[str] = set()
+    blocked_targets: set[str] = set()
+    consecutive_block = 0
     safe_max: dict[str, int] = {}
     reason_totals: dict[str, int] = {}
     total_req = 0
@@ -148,10 +150,22 @@ async def run(cfg: RunConfig, log: StressLog, resume_from: int = 0) -> dict:
             canary = await _fire(cfg, t, [t.url_builder(t.tokens[0])], 1, "ladder", rng)
             log.record_requests(canary)
             if canary and canary[0].reason_category in {classify.CONNECT_REFUSED, classify.HTTP_403}:
-                aborted = True
-                log.event("ABORT — canary also blocked; stopping run")
-                break
+                # Per-target skip: stop hammering THIS target but keep covering the
+                # others (a touchy portal like Alberta must not abort the whole run).
+                knee_hit.add(bunch.target)
+                blocked_targets.add(bunch.target)
+                consecutive_block += 1
+                log.event(f"TARGET BLOCKED — skipping remaining {bunch.target} bunches "
+                          f"(consecutive blocked bunches={consecutive_block})")
+                if consecutive_block >= 3:
+                    aborted = True
+                    log.event("ABORT — 3+ consecutive blocked bunches across targets "
+                              "(IP-wide throttle suspected); stopping run")
+                    break
+                continue
             log.event("canary recovered — continuing")
+        else:
+            consecutive_block = 0
 
         log.checkpoint({"run_id": log.run_id, "processed": processed,
                         "bunches_run": bunch_id, "knee_hit": sorted(knee_hit),
@@ -161,7 +175,7 @@ async def run(cfg: RunConfig, log: StressLog, resume_from: int = 0) -> dict:
     summary = {
         "run_id": log.run_id, "elapsed_seconds": elapsed, "bunches": bunch_id,
         "requests": total_req, "aborted": aborted, "safe_max": safe_max,
-        "knee_hit": sorted(knee_hit),
+        "knee_hit": sorted(knee_hit), "blocked_targets": sorted(blocked_targets),
         "reason_totals": dict(sorted(reason_totals.items(), key=lambda kv: -kv[1])),
     }
     log.write_summary(summary)
