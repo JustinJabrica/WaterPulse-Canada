@@ -4,13 +4,19 @@
 |---|---|
 | **Report ID** | DS-STD-2026.1 |
 | **Part** | 2 of 3 — Methodology & Test Suite |
-| **Version** | 1.0 |
+| **Version** | 1.1 (revised after the authoritative run + coverage fixes) |
 | **Status** | Draft |
 | **Publication date** | 2026-09-16 |
 | **Prepared for** | WaterPulse-Canada |
 | **Authoring organization** | WaterPulse Data Engineering |
-| **Persistent identifier** | TBD (placeholder) |
-| **How to cite** | WaterPulse Data Engineering, "WaterPulse Data-Source Standard (DS-STD-2026.1), Part 2," 2026-09-16. |
+| **Persistent identifier** | urn:waterpulse:ds-std:2026.1 |
+| **How to cite** | WaterPulse Data Engineering, "WaterPulse Data-Source Standard (DS-STD-2026.1), Part 2 — Methodology & Test Suite," 2026-09-16. |
+
+**Revision history.** v1.0 (2026-09-16) initial draft against run `probes-20260916T090344Z`
+(80/86 sanctioned). **v1.1 (2026-09-16)** revised against the authoritative run
+`probes-20260916T104357Z` — registry re-counted to 106 probes / 41 Source IDs, `http_probe`
+bounded-retry behaviour documented (80/102 → 98/102), residual set corrected, canonical Part
+titles and the minted PID applied.
 
 ---
 
@@ -19,26 +25,30 @@
 This Part specifies the *measurement methodology* behind the WaterPulse Data-Source
 Standard: how each candidate river-data source is exercised, what evidence every
 test is required to emit, and how outcomes are classified into a canonical
-failure-reason taxonomy. The methodology is realized as an executable suite of **90
-probes** (86 sanctioned + 4 residual) organized across **12 data categories**, driven
-by two runners: a polite, sequential *sanctioned* runner (`probe_sources`) that
-verifies bulk/API/archive endpoints once per invocation, and a gentle, checkpointed
-*residual* knee-finder (`stress_test`) that characterizes the safe sustainable request
-rate for the handful of scrape-only sources. Every probe records **per-request** and
-**per-test** evidence — never a bare pass/fail — capturing retrievability, field
-inventory, maximum historical depth, record/station counts, latency, licence,
-commercial-use posture, and a classified failure reason. This document defines the
-shared probe contract, the auto-discovery registry, the classifier taxonomy, the
-good-citizen (anti-flag) design constraints, the exact invocation commands, the full
-enumeration of all 90 probes, and the on-disk evidence artifacts. It closes with the
-known limitations of the method. The catalogue of *what each source is* and the
-normative coverage matrix are the subject of Part 1 and are not restated here; the
-dated results of the overnight residual run are the subject of Part 3.
+failure-reason taxonomy. The methodology is realized as an executable suite of **106
+probes** (102 sanctioned + 4 residual) drawing on **41 distinct Source IDs**, organized
+across **12 data categories**, driven by two runners: a polite, sequential *sanctioned*
+runner (`probe_sources`) that verifies bulk/API/archive endpoints once per invocation, and
+a gentle, checkpointed *residual* knee-finder (`stress_test`) that characterizes the safe
+sustainable request rate for the handful of scrape-only sources. Every probe records
+**per-request** and **per-test** evidence — never a bare pass/fail — capturing
+retrievability, field inventory, maximum historical depth, record/station counts, latency,
+licence, commercial-use posture, and a classified failure reason. The sanctioned
+`http_probe` now performs **bounded retry** of transient failures (5xx / 429 / connect+read
+timeouts, honouring `Retry-After`); in the authoritative reference run this lifted the
+result from **80/102** to **98/102** retrievable by absorbing 18 transient GeoMet 5xx
+responses. This document defines the shared probe contract, the auto-discovery registry, the
+classifier taxonomy, the good-citizen (anti-flag) design constraints, the retry and
+per-target-skip behaviour, the exact invocation commands, the full enumeration of all 106
+probes, and the on-disk evidence artifacts. It closes with the known limitations of the
+method. The catalogue of *what each source is* and the normative coverage matrix are the
+subject of Part 1 and are not restated here; the dated results of the authoritative run and
+the verified standard are the subject of Part 3.
 
 **Index Terms** — data-source verification, hydrometric data, retrievability testing,
-field inventory, failure classification, rate-limit characterization, open government
-licensing, reproducible measurement, Canada, Environment and Climate Change Canada
-(ECCC), Water Survey of Canada (WSC).
+field inventory, failure classification, bounded retry, rate-limit characterization, open
+government licensing, reproducible measurement, Canada, Environment and Climate Change
+Canada (ECCC), Water Survey of Canada (WSC).
 
 ---
 
@@ -49,11 +59,16 @@ licensing, reproducible measurement, Canada, Environment and Climate Change Cana
 This Part is the methodology specification for DS-STD-2026.1. It is normative with
 respect to *how a WaterPulse source probe is written, run, and evidenced*. It is
 descriptive with respect to source identity, jurisdictional architecture, and the
-usage-rights matrix, all of which are specified in Part 1 [1]. The measured results
-summarized herein derive from a single reference execution, run
-`probes-20260916T090344Z` (2026-09-16), in which **80 of 86** sanctioned probes were
-retrievable in **186.7 s** of wall-clock time; interpretation of the six non-OK
-outcomes is deferred to Part 1 and Part 3.
+usage-rights matrix, all of which are specified in Part 1 — Standard & Reconnaissance [1].
+The measured results summarized herein derive from a single authoritative reference
+execution, run `probes-20260916T104357Z` (2026-09-16), in which **98 of 102** sanctioned
+probes were retrievable in **631.4 s** of wall-clock time. The four non-OK outcomes are
+three `dns_error` (all `SRC-STA-GW`) and one `http_401_unauthorized` (`SRC-RIVTEMP`); their
+interpretation is deferred to Part 1 and Part 3. This run supersedes the earlier
+`probes-20260916T090344Z` draft baseline: with the `http_probe` bounded-retry behaviour of
+§3.6 enabled, the same matrix moved from 80/102 to 98/102 retrievable, chiefly by absorbing
+18 transient GeoMet HTTP 5xx responses that a single-attempt probe would have recorded as
+failures.
 
 ### 1.2 Conformance language
 
@@ -63,12 +78,17 @@ and appear in uppercase only when normative.
 
 ### 1.3 Relationship to other Parts
 
-- **Part 1 — Catalogue & Coverage Matrix** [1]: the authoritative per-source detail,
-  the 13-jurisdiction primary/backup architecture, and the usage-rights/monetization
-  matrix. Where this Part names a `source_id`, its full description lives in Part 1.
-- **Part 3 — Residual Overnight Addendum**: the dated results of the user-launched
-  `stress_test` overnight run (safe-max concurrency and failure signatures per scrape
-  target). Part 3 consumes the artifacts defined in §8 of this Part.
+- **Part 1 — Standard & Reconnaissance** [1]: the authoritative per-source detail, the
+  13-jurisdiction primary/backup architecture, and the usage-rights/monetization matrix.
+  Where this Part names a `source_id`, its full description lives in Part 1.
+- **Part 3 — Results & Verified Standard**: the dated results of the authoritative run
+  (`probes-20260916T104357Z`) rolled up into the verified standard, plus the residual
+  safe-max recommendations. Part 3 consumes the artifacts defined in §8 of this Part. The
+  full-cadence residual run (`stress-20260916T105739Z`) lands there as a dated **Part 3a
+  addendum**; where this Part refers to residual *measurements*, they are marked "PENDING —
+  Part 3a addendum".
+- **Implementation Specification**: the companion engineering spec that maps verified
+  sources onto the running app's providers and schedulers.
 
 ---
 
@@ -80,7 +100,8 @@ a derived judgement.
 
 1. **Retrievability.** Can the source be reached and a usable sample obtained *now*,
    from a neutral client, under polite load? Recorded as the boolean `retrievable`,
-   decided by the probe itself (not inferred solely from HTTP status).
+   decided by the probe itself (not inferred solely from HTTP status). In the sanctioned
+   runner this decision is taken *after* the bounded retry of §3.6 has run its course.
 2. **Field inventory.** Which fields does the payload actually expose? Recorded as
    `fields_found` (a list) and `n_fields` (its length), discovered from the returned
    CSV header, JSON keys, or GeoJSON feature properties — the *measured* contract, not
@@ -117,8 +138,8 @@ HTTP client, but differ in load discipline and cadence:
 | | `probe_sources` (sanctioned) | `stress_test` (residual) |
 |---|---|---|
 | **Module** | `tests/probe_sources.py` | `tests/stress_test.py` |
-| **Population** | the 86 `sanctioned=True` probes | the 4 scrape-only targets (AB, SK, BC + an Open-Meteo burst) |
-| **Load discipline** | one probe at a time, sequential, one bulk file / one API page / one SQLite read per source | graduated concurrency "bunches" with 10–30 min random gaps |
+| **Population** | the 102 `sanctioned=True` probes | the 4 `sanctioned=False` scrape-only probes (SRC-AB-RIVERS, SRC-BC-AQUARIUS, SRC-SK-WSA, SRC-AB-SNOW), driven through the harness targets `ab`, `sk`, `bc`, `weather` |
+| **Load discipline** | one probe at a time, sequential, one bulk file / one API page / one SQLite read per source; bounded retry of transient failures (§3.6) | graduated concurrency "bunches" with 10–30 min random gaps; `retries=0` |
 | **Cadence** | run once, on demand (CI-safe) | manual, overnight, ~10 h cap, checkpointed |
 | **Goal** | retrievability + inventory + depth + coverage | safe-max sustainable rate + failure signatures (the "knee") |
 | **Launch** | anyone, anytime | the user, ideally off a non-production IP |
@@ -128,7 +149,8 @@ evidence. Residual probes touch sources with **no** sanctioned bulk/API surface 
 the only access is scraping a page or polling an undocumented export — and therefore
 **SHALL** be excluded from the default run and exercised only through the gentle
 residual harness (or, once, via an explicit `--include-residual` flag on the sanctioned
-runner).
+runner). The `weather` harness target additionally drives an Open-Meteo rapid-burst that is
+a *stress-harness target*, not a registered probe (see the §7 residual note).
 
 ### 3.2 The shared probe contract (`tests/sources/_base.py`)
 
@@ -151,12 +173,14 @@ The contract's moving parts:
   `run_id`, a `sample_size` (stations/records to sample where applicable, default 3), a
   `request_timeout` (default 60 s), a `cache_dir` for large downloads (HYDAT SQLite,
   CanSWE), and an `allow_downloads` gate for multi-megabyte fetches.
-- **`http_probe(...)`** — the single instrumented HTTP entry point. It performs one
-  attempt, times it, classifies the outcome, and returns a `Fetch` wrapping a
-  `RequestRecord`. It **never raises** for HTTP or transport errors — it classifies them
-  — so a probe can always make a decision and always emits a request row. A
-  `from_metadata=True` flag marks URLs the *upstream advertised*, so that a 404 on such a
-  URL is recorded as an upstream data gap rather than a client-side path bug (§4).
+- **`http_probe(...)`** — the single instrumented HTTP entry point. It performs the
+  attempt(s), times each one, classifies the outcome, and returns a `Fetch` wrapping the
+  final `RequestRecord`. It **never raises** for HTTP or transport errors — it classifies
+  them — so a probe can always make a decision and always emits a request row. In the
+  sanctioned runner it applies the bounded retry of §3.6; in the residual harness it runs
+  with `retries=0`. A `from_metadata=True` flag marks URLs the *upstream advertised*, so
+  that a 404 on such a URL is recorded as an upstream data gap rather than a client-side
+  path bug (§4).
 - **`ResultLog`** — the append-only writer that persists request rows, the per-test
   summary row, the coverage row, and the per-test JSON (§8).
 - **Field-inventory helpers** — `fields_from_csv`, `fields_from_json` (dict / list-of-
@@ -177,7 +201,8 @@ its `@register(...)` decorators and registration loops populate the shared `REGI
 and returns the list of `ProbeSpec`. **Adding a source is a one-file operation**: drop a
 new `tests/sources/<name>.py`; no edit to the matrix or the runners is required.
 `summarize()` produces the counts by category and the sanctioned/residual split used in
-§7 and in the run summary.
+§7 and in the run summary. For the authoritative run it reported **106 probes = 102
+sanctioned + 4 residual** across 12 categories and 41 distinct Source IDs.
 
 ### 3.4 The sanctioned runner (`tests/probe_sources.py`)
 
@@ -188,7 +213,10 @@ guarantees a crashing probe cannot bring down the run: an unhandled exception is
 classified (`parse_error` if otherwise `unknown`) and recorded as a non-retrievable
 result with the traceback detail. After the run it writes a machine-readable
 `coverage_summary.json` (elapsed, totals, the matrix summary, counts by reason, counts
-of retrievable per category, and commercial-posture counts).
+of retrievable per category, and commercial-posture counts). For run
+`probes-20260916T104357Z` this summary recorded `total=102`, `retrievable=98`, `failed=4`,
+`by_reason={ok: 98, dns_error: 3, http_401_unauthorized: 1}`, and
+`commercial_ok_counts={yes: 96, non-commercial: 3, unknown: 2, conditional: 1}`.
 
 ### 3.5 The residual harness (`tests/stress_test.py` + `tests/stress/`)
 
@@ -197,7 +225,35 @@ registry, ladder, and gap policy live in `tests/stress/config.py`, its schedulin
 abort logic in `tests/stress/runner.py`, and its evidence writer in
 `tests/stress/report.py`. It reuses the same `http_probe`, `build_client`, and
 `RequestRecord` as the sanctioned runner, so a residual request is evidenced identically
-to a sanctioned one.
+to a sanctioned one — but it drives `http_probe` with `retries=0`, so that each attempt is
+a single clean measurement of the upstream's live behaviour rather than a retry-smoothed
+one. The harness **skips a blocked target on a per-target basis** rather than aborting the
+whole run; a global abort is reserved for 3-or-more *consecutive cross-target* blocks
+(§5.3).
+
+### 3.6 Bounded retry of transient failures (sanctioned runner)
+
+The sanctioned `http_probe` retries a bounded number of times on outcomes that are
+*transient by nature* — HTTP **5xx**, HTTP **429**, and **connect / read timeouts** — and
+**never** retries deterministic outcomes (4xx other than 429, DNS failures, TLS failures,
+`invalid_station`, `parse_error`). Retry is normative in the following respects:
+
+- The retry budget is **bounded** and small; a probe **SHALL NOT** loop indefinitely.
+- When the response carries a `Retry-After` header, the client **SHALL** honour it (parsed
+  into the request record) rather than using its own backoff.
+- **Every** attempt — including the ones that were later retried past — **SHALL** be
+  written to `requests.csv`, so the retry history is fully auditable; only the *final*
+  attempt determines the per-test `reason_category`.
+- The residual harness runs with **`retries=0`** (§3.5) so that its knee measurement is not
+  contaminated by retry smoothing.
+
+Impact on the authoritative run: with retry enabled the same matrix moved from **80/102** to
+**98/102** retrievable, absorbing **18 transient GeoMet HTTP 5xx** responses that a
+single-attempt probe recorded as `http_5xx_server`. Consequently the final
+`probes-20260916T104357Z` `by_reason` histogram contains **no 5xx at all** — every GeoMet
+collection that flapped a 5xx on first contact resolved to `ok` on a bounded retry. This
+mechanism is also noted in Part 3, where the before/after delta is the headline
+methodology result.
 
 ---
 
@@ -220,12 +276,12 @@ the interpretive work.
 | `http_400_bad_request` | malformed query on our side | HTTP 400 |
 | `http_401_unauthorized` | missing/invalid credential | HTTP 401 — e.g. an API key is required, not that the endpoint is down |
 | `http_403_forbidden` | blocked / bot-protected | HTTP 403 (also treated as a throttle/block signal) |
-| `http_429_rate_limited` | throttled | HTTP 429 |
-| `http_5xx_server` | upstream server fault | HTTP 500–599 (throttle signal) |
+| `http_429_rate_limited` | throttled | HTTP 429 (retried, bounded, in the sanctioned runner — §3.6) |
+| `http_5xx_server` | upstream server fault | HTTP 500–599 (throttle signal; retried, bounded, in the sanctioned runner — §3.6) |
 | `http_other_status` | uncategorized status | any other non-2xx |
 | `connect_refused` | host up-stack refuses / unreachable | `ConnectError` without a DNS hint ("All connection attempts failed") |
-| `connect_timeout` | no handshake in time | `ConnectTimeout` |
-| `read_timeout` | connected but no response body in time | `ReadTimeout` / `WriteTimeout` / `PoolTimeout` / generic `TimeoutException` |
+| `connect_timeout` | no handshake in time | `ConnectTimeout` (retried, bounded, in the sanctioned runner — §3.6) |
+| `read_timeout` | connected but no response body in time | `ReadTimeout` / `WriteTimeout` / `PoolTimeout` / generic `TimeoutException` (retried, bounded — §3.6) |
 | `dns_error` | name does not resolve | `ConnectError` whose message matches a DNS hint (`getaddrinfo`, "name or service not known", …) |
 | `tls_error` | certificate / TLS failure | exception message mentions certificate / SSL / TLS |
 | `invalid_station` | valid URL shape, bogus station id | station id absent from the source's list (probe-level determination) |
@@ -235,22 +291,29 @@ the interpretive work.
 ### 4.2 Why the distinctions matter
 
 - **`ok` vs `ok_empty`.** A reachable endpoint that returns no rows is a materially
-  different finding from a broken one. In the reference run, `ok_empty` cleanly labels
-  the ECCC water-prediction collections and two ice databases as *retrievable but
-  needing a deeper query* rather than as failures.
+  different finding from a broken one. The distinction remains defined and load-bearing,
+  but in the authoritative run `probes-20260916T104357Z` **no probe resolved to
+  `ok_empty`** — every reachable endpoint returned a usable payload. Notably, the ECCC
+  water-prediction source and the two ice databases, which earlier drafts had flagged as
+  empty, now return populated payloads (`SRC-ECCC-WATERPRED` = 40 water-prediction WMS
+  layers; `SRC-CRID` = 66 fields; `SRC-LAKEICE` = 64 fields).
 - **`http_404_upstream_missing` vs `http_404_bad_path`.** This is the single most
   important discrimination in the taxonomy and is why `http_probe` carries a
   `from_metadata` flag. A 404 on a URL the upstream itself published is an availability
   finding about the upstream; a 404 on a URL we built is our bug. Conflating them would
   make the standard blame the wrong party.
 - **`dns_error` vs `connect_refused` vs `connect_timeout`.** These separate "the name
-  does not resolve" (a catalogue/DNS problem, e.g. the federal groundwater SensorThings
-  host) from "the host actively refuses" (e.g. intermittent Alberta refusal) from "the
-  host never answered the handshake". A short connect timeout (§5) surfaces the refusal
-  and timeout cases quickly instead of hanging on the full read timeout.
+  does not resolve" from "the host actively refuses" from "the host never answered the
+  handshake". In the authoritative run the three `SRC-STA-GW` probes resolve to
+  `dns_error`: the officially-catalogued federal groundwater SensorThings host
+  `mon.geosciences.ca` is currently unresolvable, so the GIN WMS endpoint
+  (`gin.geosciences.ca`) is the working substitute. A short connect timeout (§5) surfaces
+  the refusal and timeout cases quickly instead of hanging on the full read timeout.
 - **`http_401_unauthorized` vs a hard failure.** A 401 means a documented credential is
-  required (e.g. the DataStream API key). The endpoint works; the probe simply lacks a
-  key. Labeling it `http_401` prevents it from being mistaken for an outage.
+  required. In the authoritative run this is `SRC-RIVTEMP`: DataStream requires an
+  `x-api-key` (requested via an online form, then rate-limited to ~2 req/s). The endpoint
+  works; the probe simply lacks a key. Labelling it `http_401` prevents it from being
+  mistaken for an outage.
 - **`invalid_station`.** A syntactically valid request for a station the source does not
   carry is distinct from a broken request; it is a coverage fact about the source.
 
@@ -261,7 +324,10 @@ Two named sets steer the residual knee-finder and the abort logic:
 - **`SUCCESS_REASONS = {ok, ok_empty}`** — reasons that count as a successful contact.
 - **`THROTTLE_REASONS = {connect_refused, connect_timeout, read_timeout, http_429,
   http_5xx, http_403}`** — reasons interpreted as throttling/blocking; when their rate in
-  a ladder step crosses the knee threshold, that target's ladder stops (§5.3).
+  a ladder step crosses the knee threshold, that target's ladder stops (§5.3). Note that
+  in the *sanctioned* runner the timeout/429/5xx members of this set are first subjected to
+  the bounded retry of §3.6; in the *residual* harness (`retries=0`) they are recorded raw,
+  which is precisely what makes the harness a faithful knee measurement.
 
 ---
 
@@ -289,15 +355,19 @@ constraints, not optional niceties.
 - **Short connect timeout.** The connect timeout is capped (min(15 s, timeout)) so that
   `connect_refused` / `connect_timeout` surface quickly rather than blocking on the full
   read timeout — important for characterizing Alberta's intermittent refusal.
+- **Retry-After honoured.** The bounded retry of §3.6 defers to any upstream `Retry-After`
+  header before its own backoff, so the client is never more aggressive than the upstream
+  invites.
 
 ### 5.2 Sanctioned vs residual split
 
 The single most important anti-flag decision is *what not to run by default*. Sources
 with a bulk file, an OGC/REST API, or a downloadable archive are sanctioned and cost the
-upstream one small request per probe. Sources with no such surface — where WaterPulse
-would otherwise have to scrape or poll — are marked `sanctioned=False`, excluded from the
-default run, and reachable only through the gentle residual harness. This keeps casual,
-repeatable runs (including CI) off the fragile endpoints entirely.
+upstream one small request per probe (plus, at most, a small bounded number of retries only
+when the upstream itself returned a transient error). Sources with no such surface — where
+WaterPulse would otherwise have to scrape or poll — are marked `sanctioned=False`, excluded
+from the default run, and reachable only through the gentle residual harness. This keeps
+casual, repeatable runs (including CI) off the fragile endpoints entirely.
 
 ### 5.3 Residual gentleness (the knee-finder)
 
@@ -306,6 +376,9 @@ When the residual harness does run, it is gentle by construction:
 - **Graduated ladder.** Concurrency ramps over a small ladder (default `[1, 2, 4, 8,
   16]`, each capped per target) against one target at a time. Each `(target,
   concurrency)` step is one **bunch**.
+- **Single-attempt measurement.** The harness drives `http_probe` with **`retries=0`**, so
+  each request is one clean observation of the upstream's live behaviour; the knee is not
+  smoothed by retries.
 - **Random long gaps.** Between bunches the harness sleeps a uniform random **10–30 min**
   (`gap_min_s`/`gap_max_s`); smoke mode collapses this to ~1–3 s for machinery
   validation only.
@@ -315,13 +388,15 @@ When the residual harness does run, it is gentle by construction:
   low deliberately.
 - **Labelled bad-input probes.** Each target also runs an `invalid`-station bunch (valid
   URL shape, bogus id → expected `invalid_station`/upstream gap), a `badpath` bunch (a
-  deliberately-malformed URL → our-mistake signature), and — for Open-Meteo only — a
-  single `rapidburst` bunch (25 requests, no jitter) to capture the "requested too fast"
-  signature. These give the failure taxonomy real, labelled examples.
-- **Canary + abort.** If a bunch is ≥ 90 % blocked (`abort_block_rate` over
-  `connect_refused`/`http_403`), the harness waits a full gap and fires a single-request
-  canary; if the canary is also blocked it **aborts the whole run**. It never hammers a
-  host that is pushing back.
+  deliberately-malformed URL → our-mistake signature), and — for the Open-Meteo `weather`
+  target only — a single `rapidburst` bunch (25 requests, no jitter) to capture the
+  "requested too fast" signature. These give the failure taxonomy real, labelled examples.
+- **Per-target skip, not whole-run abort.** If a bunch is heavily blocked
+  (`abort_block_rate` over `connect_refused`/`http_403`), the harness waits a full gap and
+  fires a single-request canary; if the canary is also blocked it **skips that target** and
+  moves on rather than aborting everything. A **global abort** is reserved for **3 or more
+  consecutive cross-target blocks** — evidence that the originating IP itself is being
+  refused everywhere. It never hammers a host that is pushing back.
 - **Honors back-pressure.** `Retry-After` is parsed off every response into the request
   record; per-request start jitter (50–250 ms) desynchronizes a bunch; a ~10 h wall cap
   bounds the run; and every step is checkpointed for `--resume`.
@@ -329,8 +404,11 @@ When the residual harness does run, it is gentle by construction:
 The 2026-09-16 smoke validation confirmed the machinery: the weather ladder reached its
 smoke safe-max at concurrency 4 with the rapid-burst probe (25 → smoke 5) showing no
 throttle at low concurrency, and Alberta responded intermittently (its bad-path bunch
-returning the expected 404). The full overnight run is the user's to launch; its results
-become the Part 3 dated addendum.
+returning the expected 404). The **full-cadence residual run is IN PROGRESS** — run
+`stress-20260916T105739Z`, targets in order `weather → bc → sk → ab`, with the real 10–30 min
+gaps — and its safe-max and failure-signature results **land as the dated Part 3a addendum**.
+Any residual measurement referenced elsewhere in this standard is therefore
+**PENDING — Part 3a addendum (run `stress-20260916T105739Z` in progress)**.
 
 ---
 
@@ -363,12 +441,12 @@ docker-compose run --rm -w /app backend python -m tests.probe_sources --include-
 
 Sanctioned-runner flags: `--category`, `--source`, `--only`, `--include-residual`,
 `--no-downloads`, `--timeout` (default 60 s), `--sample-size` (default 3), `--cache-dir`,
-`--logs-dir`.
+`--logs-dir`. The bounded retry of §3.6 is on by default for the sanctioned runner.
 
 ### 6.2 Residual gentle harness (`stress_test`)
 
 Run this yourself, ideally from a non-production IP, and pause the app's 10-minute
-scheduler first.
+scheduler first. The harness always runs with `retries=0`.
 
 ```bash
 # Validate the machinery fast (tiny ladder, ~2 s gaps)
@@ -377,7 +455,7 @@ docker compose run --rm -T --no-deps --entrypoint python backend \
 
 # The real overnight run (detached; runs for hours)
 docker compose run -d --name wp-stress --no-deps --entrypoint python backend \
-    -m tests.stress_test --targets ab,sk,bc,weather --max-hours 10
+    -m tests.stress_test --targets weather,bc,sk,ab --max-hours 10
 
 # Stop early (checkpoint + partial CSVs are already on disk)
 docker stop wp-stress
@@ -395,30 +473,41 @@ Residual-harness flags: `--targets` (subset of `ab,sk,bc,weather`), `--smoke`,
 
 ## 7. Full test enumeration
 
-The tables below enumerate **all 90 probes** in the registry, grouped by category. The
+The tables below enumerate **all 106 probes** in the registry, grouped by category. The
 **Sanct.** column is the `sanctioned` flag (`yes` = in the default `probe_sources` run;
 `no` = residual, harness-only). The **Comm.** column is the `commercial_ok` disposition.
-Per-source detail is in Part 1 [1]; this is the test-level index, not the catalogue.
+Per-source detail is in Part 1 — Standard & Reconnaissance [1]; this is the test-level
+index, not the catalogue.
 
-**Registry totals** (from `matrix.summarize()`): **90 probes = 86 sanctioned + 4
-residual**, across 12 categories — aqi 2, current 20, stations 15, historical 19,
-drainage 6, groundwater 6, flood 6, precip 4, ice 3, snow 3, weather 4, watertemp 2.
+**Registry totals** (from `matrix.summarize()`): **106 probes = 102 sanctioned + 4
+residual**, drawing on **41 distinct Source IDs**, across 12 categories — aqi 2, current 33,
+stations 15, historical 19, drainage 6, groundwater 6, flood 6, precip 5, ice 3, snow 4,
+weather 5, watertemp 2.
 
-> Note on the residual set. The four `sanctioned=False` registry probes are
+> **Note on the residual set.** The four `sanctioned=False` registry probes are
 > `current-ab-rivers` (SRC-AB-RIVERS), `current-bc-aquarius` (SRC-BC-AQUARIUS),
-> `current-sk-wsa` (SRC-SK-WSA), and `snow-ab-pillows-residual` (SRC-AB-SNOW). The
-> residual *stress harness* (§5.3) drives a slightly different set — its four targets are
-> `ab`, `sk`, `bc`, and a `weather` (Open-Meteo) rapid-burst target — because the
-> Open-Meteo burst characterizes a rate signature rather than registering a source probe.
+> `current-sk-wsa` (SRC-SK-WSA), and `snow-ab-pillows-residual` (SRC-AB-SNOW). The residual
+> *stress harness* (§5.3) drives four **targets** — `ab`, `sk`, `bc`, and a `weather`
+> (Open-Meteo) rapid-burst — where the Open-Meteo rapid-burst is a stress-harness target
+> that characterizes a rate signature rather than registering a source probe. (This
+> corrects the earlier "4th residual = Open-Meteo burst" error: the fourth *registry*
+> residual is the Alberta snow-pillows probe, and the Source-ID count is 41, not 40.)
 
 ### 7.1 aqi — 2 probes (2 sanctioned)
 
 | Test ID | Label | Source ID | Juris. | Sanct. | Licence | Comm. |
 |---|---|---|---|---|---|---|
-| `aqi-eccc-aqhi-ca` | ECCC AQHI observations (GeoMet OGC API) | SRC-ECCC-AQHI | CA | yes | OGL-Canada / MSC GeoMet | yes |
+| `aqi-eccc-aqhi-ca` | ECCC AQHI observations (GeoMet OGC API) | SRC-ECCC-AQHI | CA | yes | OGL-Canada / MSC GeoMet End-use Licence | yes |
 | `aqi-open-meteo-aqi` | Open-Meteo Air Quality (us_aqi + pm2.5/pm10) | SRC-OPEN-METEO-AQI | multi | yes | CC-BY-4.0 | non-commercial |
 
-### 7.2 current — 20 probes (17 sanctioned + 3 residual)
+### 7.2 current — 33 probes (30 sanctioned + 3 residual)
+
+The 26 Datamart probes are **13 per-P/T hourly bundles + 13 per-P/T daily bundles** (not a
+single national pull that "expands to 14"). The daily bundles are large — e.g. ON daily
+≈ 4,529,607 rows and AB daily ≈ 3,492,229 rows. The **national** realtime probe is a
+*separate* source, `SRC-ECCC-GEOMET` (`current-eccc-geomet-ca`, GeoMet
+hydrometric-realtime), not Datamart. Across the 13 per-P/T hourly Datamart pulls the total
+realtime hydrometric station count is **2,175**.
 
 | Test ID | Label | Source ID | Juris. | Sanct. | Licence | Comm. |
 |---|---|---|---|---|---|---|
@@ -435,6 +524,19 @@ drainage 6, groundwater 6, flood 6, precip 4, ice 3, snow 3, weather 4, watertem
 | `current-eccc-datamart-qc` | Datamart hourly bulk CSV (QC) | SRC-ECCC-DATAMART | QC | yes | OGL-Canada / ECCC v2.1.1 | yes |
 | `current-eccc-datamart-sk` | Datamart hourly bulk CSV (SK) | SRC-ECCC-DATAMART | SK | yes | OGL-Canada / ECCC v2.1.1 | yes |
 | `current-eccc-datamart-yt` | Datamart hourly bulk CSV (YT) | SRC-ECCC-DATAMART | YT | yes | OGL-Canada / ECCC v2.1.1 | yes |
+| `current-eccc-datamart-daily-ab` | Datamart daily bulk CSV (AB) | SRC-ECCC-DATAMART | AB | yes | OGL-Canada / ECCC v2.1.1 | yes |
+| `current-eccc-datamart-daily-bc` | Datamart daily bulk CSV (BC) | SRC-ECCC-DATAMART | BC | yes | OGL-Canada / ECCC v2.1.1 | yes |
+| `current-eccc-datamart-daily-mb` | Datamart daily bulk CSV (MB) | SRC-ECCC-DATAMART | MB | yes | OGL-Canada / ECCC v2.1.1 | yes |
+| `current-eccc-datamart-daily-nb` | Datamart daily bulk CSV (NB) | SRC-ECCC-DATAMART | NB | yes | OGL-Canada / ECCC v2.1.1 | yes |
+| `current-eccc-datamart-daily-nl` | Datamart daily bulk CSV (NL) | SRC-ECCC-DATAMART | NL | yes | OGL-Canada / ECCC v2.1.1 | yes |
+| `current-eccc-datamart-daily-ns` | Datamart daily bulk CSV (NS) | SRC-ECCC-DATAMART | NS | yes | OGL-Canada / ECCC v2.1.1 | yes |
+| `current-eccc-datamart-daily-nt` | Datamart daily bulk CSV (NT) | SRC-ECCC-DATAMART | NT | yes | OGL-Canada / ECCC v2.1.1 | yes |
+| `current-eccc-datamart-daily-nu` | Datamart daily bulk CSV (NU) | SRC-ECCC-DATAMART | NU | yes | OGL-Canada / ECCC v2.1.1 | yes |
+| `current-eccc-datamart-daily-on` | Datamart daily bulk CSV (ON) | SRC-ECCC-DATAMART | ON | yes | OGL-Canada / ECCC v2.1.1 | yes |
+| `current-eccc-datamart-daily-pe` | Datamart daily bulk CSV (PE) | SRC-ECCC-DATAMART | PE | yes | OGL-Canada / ECCC v2.1.1 | yes |
+| `current-eccc-datamart-daily-qc` | Datamart daily bulk CSV (QC) | SRC-ECCC-DATAMART | QC | yes | OGL-Canada / ECCC v2.1.1 | yes |
+| `current-eccc-datamart-daily-sk` | Datamart daily bulk CSV (SK) | SRC-ECCC-DATAMART | SK | yes | OGL-Canada / ECCC v2.1.1 | yes |
+| `current-eccc-datamart-daily-yt` | Datamart daily bulk CSV (YT) | SRC-ECCC-DATAMART | YT | yes | OGL-Canada / ECCC v2.1.1 | yes |
 | `current-eccc-geomet-ca` | GeoMet OGC API hydrometric-realtime (national sample) | SRC-ECCC-GEOMET | CA | yes | OGL-Canada / MSC v2.1.1 | yes |
 | `current-mb-floodinfo` | Manitoba FloodInfo AGOL CSV (level/flow/forecast) | SRC-MB-FLOODINFO | MB | yes | OpenMB | yes |
 | `current-nl-adrs` | NL ADRS per-station CSV (level/flow/temp) | SRC-NL-ADRS | NL | yes | OGL-NL | yes |
@@ -444,6 +546,10 @@ drainage 6, groundwater 6, flood 6, precip 4, ice 3, snow 3, weather 4, watertem
 | `current-sk-wsa` | Saskatchewan WSA hydrograph (dygraphs htmlwidget, scrape) | SRC-SK-WSA | SK | **no** | SK Crown copyright | no-written-permission |
 
 ### 7.3 stations — 15 probes (15 sanctioned)
+
+Realtime hydrometric station counts per P/T are drawn from the GeoMet stations probes;
+the national KiWIS list (`stations-on-kiwis`) enumerated 4,436 Ontario stations and the
+GeoMet climate-stations metadata enumerated 8,435 stations in the authoritative run.
 
 | Test ID | Label | Source ID | Juris. | Sanct. | Licence | Comm. |
 |---|---|---|---|---|---|---|
@@ -464,6 +570,13 @@ drainage 6, groundwater 6, flood 6, precip 4, ice 3, snow 3, weather 4, watertem
 | `stations-on-kiwis` | Ontario SWMC KiWIS getStationList (JSON) | SRC-ON-KIWIS | ON | yes | OGL-Ontario | yes |
 
 ### 7.4 historical — 19 probes (19 sanctioned)
+
+The GeoMet historical collections are **daily-mean, monthly-mean, annual-statistics, and
+annual-peaks** — there is **no "annual-mean"** collection. `daily-mean` is the one already
+wired into the running app (`eccc_provider.py:383`). HYDAT reads the full national archive:
+**1,779,871 rows / 6,478 stations / 1860–2026 (106 fields)** in the authoritative run. The
+13 `historical-bypt-*` probes measure daily-mean historical depth per P/T against a single
+representative WSC station.
 
 | Test ID | Label | Source ID | Juris. | Sanct. | Licence | Comm. |
 |---|---|---|---|---|---|---|
@@ -500,27 +613,43 @@ drainage 6, groundwater 6, flood 6, precip 4, ice 3, snow 3, weather 4, watertem
 
 ### 7.6 groundwater — 6 probes (6 sanctioned)
 
+The three `SRC-STA-GW` probes are the only sanctioned probes that failed in the
+authoritative run (`dns_error`): their catalogued SensorThings host `mon.geosciences.ca`
+does not currently resolve. The GIN WMS endpoint (`gin.geosciences.ca`) is the working
+national-groundwater substitute and returned 44 layers.
+
 | Test ID | Label | Source ID | Juris. | Sanct. | Licence | Comm. |
 |---|---|---|---|---|---|---|
 | `groundwater-gin-wms-ca` | GIN WMS GetCapabilities (national groundwater layers) | SRC-GIN | CA | yes | OGL-Canada | yes |
-| `groundwater-sta-gw-ca` | GSC SensorThings groundwater (national Things) | SRC-STA-GW | CA | yes | OGL-Canada | yes |
-| `groundwater-sta-gw-on` | GSC SensorThings groundwater (ON) | SRC-STA-GW | ON | yes | OGL-Canada | yes |
-| `groundwater-sta-gw-qc` | GSC SensorThings groundwater (QC) | SRC-STA-GW | QC | yes | OGL-Canada | yes |
+| `groundwater-sta-gw-ca` | GSC SensorThings groundwater (national Things $top=5) | SRC-STA-GW | CA | yes | OGL-Canada | yes |
+| `groundwater-sta-gw-on` | GSC SensorThings groundwater (ON, prov eq 2) | SRC-STA-GW | ON | yes | OGL-Canada | yes |
+| `groundwater-sta-gw-qc` | GSC SensorThings groundwater (QC, prov eq 7) | SRC-STA-GW | QC | yes | OGL-Canada | yes |
 | `groundwater-on-pgmn` | Ontario PGMN (CKAN package_show) | SRC-ON-PGMN | ON | yes | OGL-Ontario | yes |
 | `groundwater-qc-rsesq` | Québec RSESQ (Données Québec CKAN) | SRC-QC-RSESQ | QC | yes | CC-BY-4.0 | yes |
 
 ### 7.7 flood — 6 probes (6 sanctioned)
 
+`SRC-ECCC-WATERPRED` is verified as **40 water-prediction WMS layers** discovered via
+GeoMet **WMS GetCapabilities** (WCPS / OHPS / DHPS / RIOPS / CIOPS / surge) — it is **not**
+an OGC API — Features collection set. `SRC-ON-CO` (Conservation Ontario) is now OK against
+its flood-messages URL.
+
 | Test ID | Label | Source ID | Juris. | Sanct. | Licence | Comm. |
 |---|---|---|---|---|---|---|
-| `flood-eccc-waterpred-ca` | ECCC GeoMet water-prediction collections (WCPS/OHPS/surge) | SRC-ECCC-WATERPRED | CA | yes | OGL-Canada / ECCC | yes |
+| `flood-eccc-waterpred-ca` | ECCC GeoMet water-prediction WMS layers (WCPS/OHPS/DHPS/RIOPS/CIOPS/surge) | SRC-ECCC-WATERPRED | CA | yes | OGL-Canada / ECCC | yes |
 | `flood-nrcan-fhimp-ca` | NRCan FHIMP flood-mapping hub (geo.ca) | SRC-NRCAN-FLOOD | CA | yes | OGL-Canada | yes |
 | `flood-bc-rfc-notifications` | BC River Forecast Centre warnings (ArcGIS) | SRC-BC-RFC | BC | yes | OGL-BC | yes |
 | `flood-mb-hfc` | Manitoba Hydrologic Forecast Centre (HTML/PDF) | SRC-MB-HFC | MB | yes | MB terms (unspecified) | unknown |
 | `flood-on-conservation-ontario` | Conservation Ontario flood forecasting & warning (HTML/PDF) | SRC-ON-CO | ON | yes | CO terms (unspecified) | unknown |
 | `flood-qc-vigilance` | Québec Vigilance flood-surveillance WFS | SRC-QC-VIGILANCE | QC | yes | CC-BY-4.0 (QC) | yes |
 
-### 7.8 precip — 4 probes (4 sanctioned)
+### 7.8 precip — 5 probes (5 sanctioned)
+
+`SRC-BC-ASWS` contributes one of its four sibling CSVs here (PC = accumulated
+precipitation); its SW/SD siblings appear under snow (§7.10) and its TA sibling under
+weather (§7.11). The GeoMet climate collections are the largest observational archives
+measured by the suite: in the authoritative run `climate-daily` reported **≈184.7M rows**
+(184,672,664) and `climate-hourly` ≈277.1M (277,059,247).
 
 | Test ID | Label | Source ID | Juris. | Sanct. | Licence | Comm. |
 |---|---|---|---|---|---|---|
@@ -528,8 +657,13 @@ drainage 6, groundwater 6, flood 6, precip 4, ice 3, snow 3, weather 4, watertem
 | `precip-eccc-climate-hourly` | GeoMet climate-hourly (hourly obs) | SRC-ECCC-CLIMATE | CA | yes | OGL-Canada | yes |
 | `precip-eccc-climate-monthly` | GeoMet climate-monthly (monthly summaries) | SRC-ECCC-CLIMATE | CA | yes | OGL-Canada | yes |
 | `precip-eccc-rdpa-capa-10km` | GeoMet RDPA/CaPA 10 km 6 h accumulation (collection metadata) | SRC-ECCC-CLIMATE | CA | yes | OGL-Canada | yes |
+| `precip-bc-asws-pc` | BC ASWS accumulated precipitation (wide CSV) | SRC-BC-ASWS | BC | yes | OGL-BC | yes |
 
 ### 7.9 ice — 3 probes (3 sanctioned)
+
+Both `SRC-CRID` and `SRC-LAKEICE`, previously recorded as broken/empty, are now retrievable
+via `open.canada.ca` CKAN `package_show`: CRID returns 66 fields (record span 1894–2015)
+and LAKEICE returns 64 fields.
 
 | Test ID | Label | Source ID | Juris. | Sanct. | Licence | Comm. |
 |---|---|---|---|---|---|---|
@@ -537,15 +671,16 @@ drainage 6, groundwater 6, flood 6, precip 4, ice 3, snow 3, weather 4, watertem
 | `ice-crid-ca` | Canadian River Ice Database (NHP sites, freeze/break-up) | SRC-CRID | CA | yes | OGL-Canada | yes |
 | `ice-lakeice-ca` | Lake Ice Database (freeze-up / break-up / ice cover) | SRC-LAKEICE | CA | yes | OGL-Canada | yes |
 
-### 7.10 snow — 3 probes (2 sanctioned + 1 residual)
+### 7.10 snow — 4 probes (3 sanctioned + 1 residual)
 
 | Test ID | Label | Source ID | Juris. | Sanct. | Licence | Comm. |
 |---|---|---|---|---|---|---|
 | `snow-canswe-zenodo-ca` | CanSWE national SWE dataset (Zenodo record metadata) | SRC-CANSWE | CA | yes | OGL-Canada (Zenodo) | yes |
-| `snow-bc-asws-swe` | BC ASWS near-real-time SWE (wide CSV) | SRC-BC-ASWS | BC | yes | OGL-BC | yes |
+| `snow-bc-asws-sw` | BC ASWS SWE (snow water equivalent) (wide CSV) | SRC-BC-ASWS | BC | yes | OGL-BC | yes |
+| `snow-bc-asws-sd` | BC ASWS snow depth (wide CSV) | SRC-BC-ASWS | BC | yes | OGL-BC | yes |
 | `snow-ab-pillows-residual` | Alberta River Basins snow pillows (residual) | SRC-AB-SNOW | AB | **no** | OGL-Alberta (unconfirmed) | unknown |
 
-### 7.11 weather — 4 probes (4 sanctioned)
+### 7.11 weather — 5 probes (5 sanctioned)
 
 | Test ID | Label | Source ID | Juris. | Sanct. | Licence | Comm. |
 |---|---|---|---|---|---|---|
@@ -553,8 +688,13 @@ drainage 6, groundwater 6, flood 6, precip 4, ice 3, snow 3, weather 4, watertem
 | `weather-eccc-citypage-ab` | ECCC City Page — city XML (Calgary, AB) | SRC-ECCC-CITYPAGE | AB | yes | OGL-Canada / ECCC v2.1.1 | yes |
 | `weather-met-norway-locationforecast` | MET Norway Locationforecast 2.0 (compact point forecast) | SRC-MET-NORWAY | CA | yes | CC-BY-4.0 / NLOD-2.0 | yes |
 | `weather-openmeteo-forecast-ca` | Open-Meteo forecast (current + 7-day; app weather contract) | SRC-OPEN-METEO | CA | yes | CC-BY-4.0 | non-commercial |
+| `weather-bc-asws-ta` | BC ASWS air temperature (wide CSV) | SRC-BC-ASWS | BC | yes | OGL-BC | yes |
 
 ### 7.12 watertemp — 2 probes (2 sanctioned)
+
+`SRC-RIVTEMP` is the one `http_401_unauthorized` in the authoritative run: DataStream
+requires an `x-api-key` (requested via an online form; then rate-limited to ~2 req/s). API
+usage is documented at `github.com/datastreamapp/api-docs`.
 
 | Test ID | Label | Source ID | Juris. | Sanct. | Licence | Comm. |
 |---|---|---|---|---|---|---|
@@ -570,9 +710,11 @@ pass/fail-only; the raw request rows and per-test JSON are always retained.
 
 ### 8.1 Sanctioned run (`probes-<UTC-timestamp>/`)
 
+The authoritative reference directory is `tests/logs/probes-20260916T104357Z/`.
+
 | Artifact | Grain | Columns / keys |
 |---|---|---|
-| `requests.csv` | one row per HTTP attempt | `ts_utc, source_id, category, method, url, http_status, outcome, reason_category, reason_detail, error_type, latency_ms, resp_bytes, records_parsed, retry_after_s, notes` |
+| `requests.csv` | one row per HTTP attempt (incl. every retried attempt — §3.6) | `ts_utc, source_id, category, method, url, http_status, outcome, reason_category, reason_detail, error_type, latency_ms, resp_bytes, records_parsed, retry_after_s, notes` |
 | `tests.csv` | one row per probe (summary) | `test_id, category, source_id, label, jurisdiction, licence, commercial_ok, retrievable, reason_category, endpoint, n_fields, fields_found, record_count, station_count, earliest_year, latest_year, span_years, latency_ms, n_requests, reason_detail, notes` |
 | `coverage.csv` | one row per probe (coverage rollup) | `category, source_id, label, jurisdiction, retrievable, reason_category, n_fields, record_count, station_count, earliest_year, span_years, latency_ms, commercial_ok, licence` |
 | `tests/<test_id>.json` | full per-test document | the complete `TestResult` incl. `fields_found`, `sample`, and the probe's own `requests[]` rows |
@@ -580,20 +722,26 @@ pass/fail-only; the raw request rows and per-test JSON are always retained.
 
 The `fields_found` list is stored `|`-joined in the CSV and as a JSON array in the
 per-test document, so the *measured* field contract is machine-diffable across runs.
+Because every retried attempt is written to `requests.csv`, the retry history behind any
+`ok` that was reached on a second attempt (e.g. the 18 absorbed GeoMet 5xx) is fully
+reconstructable from the evidence.
 
 ### 8.2 Residual run (`stress-<UTC-timestamp>/`)
 
+The in-progress full-cadence directory is `tests/logs/stress-20260916T105739Z/`; its rolled
+values are **PENDING — Part 3a addendum**.
+
 | Artifact | Grain | Contents |
 |---|---|---|
-| `requests.csv` | one row per HTTP attempt | same schema as §8.1 (shared `RequestRecord`) |
+| `requests.csv` | one row per HTTP attempt | same schema as §8.1 (shared `RequestRecord`); `retries=0`, so one row per request |
 | `bunches.csv` | one row per bunch | `bunch_id, ts_utc, target, kind, concurrency, n_req, n_ok, n_fail, success_rate, throughput_req_s, p50_ms, p95_ms, max_ms, reason_breakdown, knee, gap_after_s, notes` |
-| `events.log` | timestamped timeline | start, per-bunch gaps and results, knee hits, block/canary/abort events, completion |
-| `checkpoint.json` | resumable state | `run_id, processed, bunches_run, knee_hit[], safe_max{}, aborted` |
-| `summary.json` / `summary.md` | run rollup | bunches, requests, elapsed, aborted, `safe_max` per target, `knee_hit`, and the failure-reason catalogue (`reason_totals`) |
+| `events.log` | timestamped timeline | start, per-bunch gaps and results, knee hits, block/canary/skip/abort events, completion |
+| `checkpoint.json` | resumable state | `run_id, processed, bunches_run, knee_hit[], safe_max{}, skipped_targets[], aborted` |
+| `summary.json` / `summary.md` | run rollup | bunches, requests, elapsed, aborted, `safe_max` per target, `knee_hit`, skipped targets, and the failure-reason catalogue (`reason_totals`) |
 
 The `bunches.csv` `kind` column labels each bunch (`ladder` / `invalid` / `badpath` /
 `rapidburst`), and `reason_breakdown` is a JSON histogram of `reason_category` for that
-bunch — the raw material for the Part 3 safe-max recommendation and failure-signature
+bunch — the raw material for the Part 3a safe-max recommendation and failure-signature
 catalogue.
 
 ---
@@ -603,30 +751,38 @@ catalogue.
 1. **Point-in-time sampling.** Each sanctioned probe fetches one small sample. A source
    that is transiently up (or down) at run time is recorded as such; retrievability is a
    snapshot, not an SLA. Repeated runs over time are the intended mitigation, and every
-   run is independently timestamped and retained.
-2. **Sampled depth, not exhaustive depth.** `earliest_year`/`span_years` reflect the
+   run is independently timestamped and retained. Bounded retry (§3.6) removes only
+   *transient* flaps within a single run; it does not turn a snapshot into an SLA.
+2. **Retry masks transient upstream faults.** By design, the sanctioned runner reports the
+   *final* outcome after a bounded retry, so an endpoint that flapped a single 5xx before
+   succeeding is recorded as `ok`. The intermediate 5xx attempts remain in `requests.csv`
+   for anyone who needs the raw reliability signal, but the headline `retrievable` count
+   is deliberately retry-smoothed. The residual harness (`retries=0`) is the un-smoothed
+   counterpart.
+3. **Sampled depth, not exhaustive depth.** `earliest_year`/`span_years` reflect the
    sample requested (e.g. a single representative WSC station such as 05BB001 for the
    GeoMet historical collections), not the deepest record in the entire archive. HYDAT is
    the exception: it reads the full national archive and therefore reports true maxima.
-3. **Field inventory is best-effort.** `fields_from_json` handles dict / list-of-dict /
+4. **Field inventory is best-effort.** `fields_from_json` handles dict / list-of-dict /
    GeoJSON / OGC `value[]` shapes; unusual envelopes may under-report fields. A field
    present only in some records but absent from the first sampled record can be missed.
-4. **Classifier heuristics.** `dns_error` vs `connect_refused` and `tls_error` are
+5. **Classifier heuristics.** `dns_error` vs `connect_refused` and `tls_error` are
    inferred partly from exception message text, which is library- and platform-dependent;
    a future `httpx`/`anyio` change could reshuffle a small number of edge classifications.
    The `from_metadata` distinction is only as good as the probe author's honest marking of
    which URLs came from upstream metadata.
-5. **`ok_empty` is under-specified by design.** It means "reachable, but this light query
+6. **`ok_empty` is under-specified by design.** It means "reachable, but this light query
    returned nothing." Whether that is a genuine empty result or an under-parameterized
-   query requires a deeper follow-up query that is out of scope for a low-load probe.
-6. **Residual results are environment-sensitive.** Safe-max concurrency and block
+   query requires a deeper follow-up query that is out of scope for a low-load probe. (No
+   probe hit `ok_empty` in the authoritative run.)
+7. **Residual results are environment-sensitive.** Safe-max concurrency and block
    signatures depend on the originating IP, time of day, and upstream state. A run from a
-   production IP, or during upstream maintenance, will not generalize; Part 3 records the
-   exact conditions of its run.
-7. **Not a load test.** The suite is explicitly *gentle*. It characterizes the *onset* of
+   production IP, or during upstream maintenance, will not generalize; the Part 3a addendum
+   records the exact conditions of run `stress-20260916T105739Z`.
+8. **Not a load test.** The suite is explicitly *gentle*. It characterizes the *onset* of
    throttling (the knee) at low concurrency; it does not, and must not, probe an upstream's
    true ceiling. Reported safe-max values are conservative lower bounds.
-8. **Licence/commercial fields are asserted metadata.** `licence` and `commercial_ok` are
+9. **Licence/commercial fields are asserted metadata.** `licence` and `commercial_ok` are
    carried on each probe from the analysis in Part 1; they are not re-derived from the
    response at run time and can drift if an upstream changes terms. They are a pointer to
    Part 1, not an independent legal determination.
@@ -636,7 +792,7 @@ catalogue.
 ## 10. References
 
 [1] WaterPulse Data Engineering, "WaterPulse Data-Source Standard (DS-STD-2026.1), Part 1
-— Catalogue & Coverage Matrix," 2026-09-16.
+— Standard & Reconnaissance," 2026-09-16.
 
 [2] S. Bradner, "Key words for use in RFCs to Indicate Requirement Levels," RFC 2119,
 IETF, Mar. 1997. [Online]. Available: https://www.rfc-editor.org/rfc/rfc2119. Accessed:
@@ -662,8 +818,9 @@ Accessed: 2026-09-16.
 [7] Open-Meteo, "Terms & API usage limits (free non-commercial tier)," open-meteo.com.
 [Online]. Available: https://open-meteo.com/en/terms. Accessed: 2026-09-16.
 
-[8] DataStream, "DataStream Public API (OData v4) — authentication and rate limits,"
-datastream.org. [Online]. Available: https://datastream.org/. Accessed: 2026-09-16.
+[8] DataStream, "DataStream Public API (OData v4) — authentication (x-api-key) and rate
+limits," api-docs. [Online]. Available: https://github.com/datastreamapp/api-docs.
+Accessed: 2026-09-16.
 
 [9] Open Geospatial Consortium, "OGC API — Features / OGC API — EDR," OGC. [Online].
 Available: https://ogcapi.ogc.org/. Accessed: 2026-09-16.
@@ -678,8 +835,12 @@ Available: https://www.python-httpx.org/. Accessed: 2026-09-16.
 [12] Government of Canada, "Open Government Licence — Canada, v2.0." [Online]. Available:
 https://open.canada.ca/en/open-government-licence-canada. Accessed: 2026-09-16.
 
+[13] Geological Survey of Canada, "Groundwater Information Network (GIN) — WMS services,"
+gin.geosciences.ca. [Online]. Available: https://gin.geosciences.ca/. Accessed:
+2026-09-16.
+
 ---
 
 *End of DS-STD-2026.1 Part 2 — Methodology & Test Suite. Cite as: WaterPulse Data
-Engineering, "WaterPulse Data-Source Standard (DS-STD-2026.1), Part 2," 2026-09-16.
-Persistent identifier: TBD (placeholder).*
+Engineering, "WaterPulse Data-Source Standard (DS-STD-2026.1), Part 2 — Methodology & Test
+Suite," 2026-09-16. Persistent identifier: urn:waterpulse:ds-std:2026.1.*

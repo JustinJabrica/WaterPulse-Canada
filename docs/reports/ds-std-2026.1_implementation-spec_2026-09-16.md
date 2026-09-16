@@ -2,24 +2,29 @@
 
 **Report ID:** DS-STD-2026.1
 **Part:** Implementation Specification (companion to Parts 1–3)
-**Version:** 1.0
+**Version:** 1.1
 **Status:** Draft
 **Publication date:** 2026-09-16
 **Prepared for:** WaterPulse-Canada
 **Authoring organization:** WaterPulse Data Engineering
-**Persistent identifier:** TBD (placeholder)
+**Persistent identifier:** urn:waterpulse:ds-std:2026.1
 
-**How to cite:** WaterPulse Data Engineering, "WaterPulse Data-Source Standard (DS-STD-2026.1), Part N," 2026-09-16.
+**How to cite:** WaterPulse Data Engineering, "WaterPulse Data-Source Standard (DS-STD-2026.1), Part N," 2026-09-16. PID: urn:waterpulse:ds-std:2026.1.
+
+**Revision history:**
+
+- **v1.1 (2026-09-16)** — Revised after the authoritative probe run (`probes-20260916T104357Z`) and the coverage audit: coverage restated to **98/102** sanctioned probes retrievable (was 80/86); registry corrected to **106 probes = 102 sanctioned + 4 residual** across **41 distinct Source IDs** and 12 categories; canonical Part titles applied (Part 1 "Standard & Reconnaissance", Part 2 "Methodology & Test Suite", Part 3 "Results & Verified Standard"); persistent identifier minted; http_probe transient-retry methodology and residual-harness per-target-skip / consecutive-block-abort semantics documented; the 4th residual corrected to `snow-ab-pillows-residual` (the Open-Meteo rapid burst is a stress-harness target, not a registered probe); previously-broken sources (SRC-CRID, SRC-LAKEICE, SRC-ECCC-WATERPRED, SRC-ON-CO) reported as retrievable.
+- **v1.0 (2026-09-16)** — Initial draft against superseded run `probes-20260916T090344Z` (80/86).
 
 ---
 
 ## Abstract
 
-This document is the engineering translation of the WaterPulse Data-Source Standard (DS-STD-2026.1). Where Parts 1–3 establish *which* sources are authoritative for each Canadian jurisdiction, *what* their measured coverage and usage rights are, and *how* the residual scrape sources behave under load, this Implementation Specification defines *how the WaterPulse backend (`waterpulse-backend/app`) shall be modified* to realize that standard. It specifies a per-jurisdiction source-priority resolver; a set of reusable transport adapters to be added under `app/services/providers`; the unification of two independent historical-retention constants into a single environment-driven control; a replacement of the two-digit drainage-basin heuristic with authoritative Water Survey of Canada (WSC) basin polygons; a decision framework for remediating the frontend's hard dependency on Open-Meteo weather and US AQI; the end-to-end propagation of Environment and Climate Change Canada (ECCC) quality-control symbols; optional new-category ingestion pipelines; and the guardrails required if the currently public-good, non-commercial service is ever monetized. No code is written in this round; the specification is scoped so that each section can be handed to a later build increment with acceptance criteria attached. All coverage claims are drawn from a single measured verification run (`run_id=probes-20260916T090344Z`, 2026-09-16), which retrieved 80 of 86 sanctioned probes in 186.7 s [1].
+This document is the engineering translation of the WaterPulse Data-Source Standard (DS-STD-2026.1). Where Parts 1–3 establish *which* sources are authoritative for each Canadian jurisdiction, *how* they are probed and verified, and *what* their measured coverage and usage rights are, this Implementation Specification defines *how the WaterPulse backend (`waterpulse-backend/app`) shall be modified* to realize that standard. It specifies a per-jurisdiction source-priority resolver; a set of reusable transport adapters to be added under `app/services/providers`; the unification of two independent historical-retention constants into a single environment-driven control; a replacement of the two-digit drainage-basin heuristic with authoritative Water Survey of Canada (WSC) basin polygons; a decision framework for remediating the frontend's hard dependency on Open-Meteo weather and US AQI; the end-to-end propagation of Environment and Climate Change Canada (ECCC) quality-control symbols; optional new-category ingestion pipelines; and the guardrails required if the currently public-good, non-commercial service is ever monetized. No code is written in this round; the specification is scoped so that each section can be handed to a later build increment with acceptance criteria attached. All coverage claims are drawn from the authoritative measured verification run (`run_id=probes-20260916T104357Z`, 2026-09-16), which retrieved **98 of 102 sanctioned probes in 631.4 s** [1]; the registry comprises **106 probes (102 sanctioned + 4 residual)** across **41 distinct Source IDs** and 12 categories.
 
 ## Index Terms
 
-Adapter pattern, air quality health index (AQHI), ArcGIS REST, data provenance, DataStream OData, drainage basin, Environment and Climate Change Canada (ECCC), ERDDAP, GeoMet OGC API, HYDAT, hydrometric data, KiWIS, MET Norway, Open-Meteo, open government licence, OGC API — Features, quality control, SensorThings, source-priority resolver, Water Survey of Canada (WSC).
+Adapter pattern, air quality health index (AQHI), ArcGIS REST, data provenance, DataStream OData, drainage basin, Environment and Climate Change Canada (ECCC), ERDDAP, GeoMet OGC API, HYDAT, hydrometric data, KiWIS, MET Norway, Open-Meteo, open government licence, OGC API — Features, quality control, SensorThings, source-priority resolver, transient retry, Water Survey of Canada (WSC).
 
 ---
 
@@ -37,9 +42,9 @@ This document covers the server-side application rooted at `waterpulse-backend/a
 
 | Source part | Establishes | Consumed by this spec in |
 |---|---|---|
-| Part 1 — Source registry & architecture | The 90-probe registry (86 sanctioned + 4 residual across 12 categories) and the primary/backup architecture: provincial-primary where a programmatic feed exists, ECCC/WSC as national backup and historical backbone; Quebec as a documented provincial-only exception [1] | §2, §3, §8 |
-| Part 2 — Usage rights & monetization | Per-source licence and commercial posture; the non-commercial-vs-hypothetical-commercial two-tier model; the AB + SK + Open-Meteo-free-tier blockers [2] | §6, §9 |
-| Part 3 — Residual harness addendum | Behaviour of the scrape/residual sources (AB `rivers.alberta.ca`, SK htmlwidget, BC AQUARIUS) and the Open-Meteo rapid-burst probe under the gentle overnight harness [3] | §9, §10 |
+| Part 1 — Standard & Reconnaissance | The **106-probe registry (102 sanctioned + 4 residual)** across 12 categories and **41 distinct Source IDs**, and the primary/backup architecture: provincial-primary where a programmatic feed exists, ECCC/WSC as national backup and historical backbone; Quebec as a documented provincial-only exception [1] | §2, §3, §8 |
+| Part 2 — Methodology & Test Suite | The sanctioned probe methodology; the `http_probe` transient-retry policy (5xx/429/connect+read timeouts, bounded, honouring `Retry-After`); the residual-harness design (retries = 0, per-target skip of a blocked target, global abort only on 3+ consecutive cross-target blocks); the 4 residual probes `current-ab-rivers`, `current-bc-aquarius`, `current-sk-wsa`, `snow-ab-pillows-residual` [2] | §3, §10 |
+| Part 3 — Results & Verified Standard | Per-source measured coverage (**98/102 retrievable**); per-source licence and commercial posture; the non-commercial-vs-hypothetical-commercial two-tier model; the AB + SK + Open-Meteo-free-tier blockers. Residual load measurements are PENDING — Part 3a addendum (run `stress-20260916T105739Z` in progress) [3] | §6, §9, §10 |
 
 ### 1.4 Current implementation baseline (as-built, 2026-09-16)
 
@@ -49,7 +54,7 @@ The following facts about the current codebase are load-bearing for the changes 
 - **Current-reading merge.** `app/services/readings_refresh.py::_merge_readings()` implements priority purely by list order and first-writer-wins: "for each provider in registry order, keep the reading for a station only if no earlier provider already produced one." Provincial priority is therefore *implicit in registration order*, not driven by jurisdiction.
 - **Historical fetch window.** `app/services/historical_sync.py` derives its fetch window from `settings.HISTORICAL_LOOKBACK_YEARS` (`config.py:87`, default `5`) at `historical_sync.py:108`.
 - **Historical prune depth.** The prune step uses a *separate, hardcoded* module constant `MAX_YEARS = 5` at `historical_sync.py:37` (consumed in `_prune_old_data`, `historical_sync.py:311` and `:326`). The fetch window and the prune depth are **two independent values** that merely happen to both equal 5 today.
-- **ECCC endpoints wired vs. used.** `config.py` defines convenience URLs for realtime, daily-mean, monthly-mean, annual-statistics, and annual-peaks. Only `eccc_realtime_url` (`eccc_provider.py:238`, `:292`) and `eccc_daily_mean_url` (`eccc_provider.py:383`) are actually called. Monthly-mean, annual-statistics, and annual-peaks are configured but **unused**.
+- **ECCC endpoints wired vs. used.** `config.py` defines convenience URLs for realtime, daily-mean, monthly-mean, annual-statistics, and annual-peaks (`config.py:117`, `:121`, `:125`, `:129`). Only `eccc_realtime_url` (`eccc_provider.py:238`, `:292`) and `eccc_daily_mean_url` (`eccc_provider.py:383`) are actually called — i.e. **daily-mean is already wired**. Monthly-mean, annual-statistics, and annual-peaks are configured but **unused**. (There is no "annual-mean" collection; the GeoMet historical collections are daily-mean, monthly-mean, annual-statistics, and annual-peaks.)
 - **Datamart base URL.** `ECCC_DATAMART_BASE_URL` is declared as a required `.env` value (`config.py:33`) but is referenced **nowhere** in `app/`. It is configured-but-dead.
 - **Quality symbols.** `CurrentReading` already has `level_symbol` and `discharge_symbol` columns (`reading.py:30–31`), populated from `LEVEL_SYMBOL_EN`/`DISCHARGE_SYMBOL_EN` by the ECCC realtime parser (`eccc_provider.py:344–345`). No Datamart QA/QC grade is captured, and no symbol is surfaced through the API schema or frontend.
 - **Drainage basin.** `Station.drainage_basin_prefix` (`station.py:26`, `String(5)`) stores the first two digits of the WSC station number. It powers `/api/readings/by-drainage-basin/{prefix}` (`routes/readings.py:171`), the station serializers (`routes/stations.py:198,363`), and the frontend "Drainage Basin" field (`StationDetail.js:506`).
@@ -57,7 +62,7 @@ The following facts about the current codebase are load-bearing for the changes 
 
 ### 1.5 Gap statement
 
-The current backend implements only 2 of the ~6 jurisdictions that have a programmatic provincial feed and none of the 12-category breadth catalogued in Part 1. Provincial priority is a side effect of list ordering rather than a declared policy, there is no Quebec-only rule, the historical archive is capped at ~5 years despite HYDAT offering a measured 1860→2026 record [1], drainage grouping is a two-digit heuristic rather than real geometry, and the weather/AQI layer depends on a source whose free tier is non-commercial [2]. This specification closes those gaps.
+The current backend implements only 2 of the ~6 jurisdictions that have a programmatic provincial feed and none of the 12-category breadth catalogued in Part 1. Provincial priority is a side effect of list ordering rather than a declared policy, there is no Quebec-only rule, the historical archive is capped at ~5 years despite HYDAT offering a measured **1860→2026 record (167 years, 6,478 stations, 1,779,871 records, 106 fields)** [1], drainage grouping is a two-digit heuristic rather than real geometry, and the weather/AQI layer depends on a source whose free tier is non-commercial [3]. This specification closes those gaps.
 
 ### 1.6 Requirements language
 
@@ -69,7 +74,7 @@ The key words "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT", and "MAY" in this do
 
 ### 2.1 Position
 
-DS-STD-2026.1 Part 1 fixes the architecture: for each of the 13 provinces and territories, the **PRIMARY** source is that jurisdiction's own authoritative programmatic feed where one exists; the **BACKUP / validation** source is ECCC/WSC (Datamart real-time CSV, HYDAT deep history, GeoMet OGC metadata and historical, City Page, AQHI, climate). Only ~6 P/T have a real programmatic provincial river feed — Alberta, British Columbia (partial), Manitoba, Ontario, Quebec, and Newfoundland and Labrador; Saskatchewan values are scrape-only. The remainder are ECCC-primary. **Quebec is the documented exception**: because ECCC's Datamart carries only ~15 measured Quebec realtime stations [1], Quebec SHALL be treated as **provincial-only** (Vigilance), with ECCC used solely as historical/metadata backbone, never as the realtime backup for the current-reading merge.
+DS-STD-2026.1 Part 1 fixes the architecture: for each of the 13 provinces and territories, the **PRIMARY** source is that jurisdiction's own authoritative programmatic feed where one exists; the **BACKUP / validation** source is ECCC/WSC (Datamart real-time CSV, GeoMet hydrometric-realtime, HYDAT deep history, GeoMet OGC historical, City Page, AQHI, climate). Only ~6 P/T have a real programmatic provincial river feed — Alberta, British Columbia (partial), Manitoba, Ontario, Quebec, and Newfoundland and Labrador; Saskatchewan values are scrape-only. The remainder are ECCC-primary. **Quebec is the documented exception**: because ECCC's Datamart carries only **15 measured Quebec realtime stations** (9,548 hourly rows) [1], Quebec SHALL be treated as **provincial-only** (Vigilance), with ECCC used solely as historical/metadata backbone, never as the realtime backup for the current-reading merge.
 
 The current implementation encodes priority implicitly through provider registration order (§1.4). This section replaces that with an **explicit, declarative resolver** that maps a `(jurisdiction, category, station)` tuple to an ordered list of sources.
 
@@ -84,8 +89,8 @@ A new module `app/services/resolver.py` SHALL define the source-priority policy 
 | `source_id` | `str` | Registry ID, e.g. `SRC-ECCC-DATAMART`, `SRC-AB-RIVERS`, `SRC-QC-VIGILANCE` |
 | `provider` | `str` | Adapter name that services this source (§3), e.g. `"eccc_datamart"`, `"alberta"`, `"qc_vigilance"` |
 | `role` | `enum{PRIMARY, BACKUP, HISTORICAL, VALIDATION}` | Position in the priority chain |
-| `commercial_ok` | `enum{yes, no, conditional, non_commercial}` | Copied from Part 2; consumed by §9 |
-| `sanctioned` | `bool` | `False` for residual/scrape sources (AB rivers, SK htmlwidget, BC AQUARIUS) |
+| `commercial_ok` | `enum{yes, no_written_permission, non_commercial, conditional, unknown}` | Copied verbatim from the Part 3 verified usage-rights matrix; consumed by §9 |
+| `sanctioned` | `bool` | `False` for the 4 residual/scrape sources (`SRC-AB-RIVERS`, `SRC-BC-AQUARIUS`, `SRC-SK-WSA`, `SRC-AB-SNOW`) |
 
 **`SourceRoute`** — the resolved ordered chain for one `(jurisdiction, category)` key:
 
@@ -110,7 +115,7 @@ resolve(jurisdiction: str, category: str, station: str | None = None) -> SourceR
 
 ### 2.4 The priority matrix (current + historical)
 
-The following matrix is normative for the `current` (realtime) and `historical` categories and is derived directly from the Part 1 architecture and the measured run [1]. "ECCC realtime" denotes the Datamart bulk CSV / GeoMet hydrometric-realtime backup; "ECCC historical" denotes HYDAT + GeoMet daily/monthly/annual.
+The following matrix is normative for the `current` (realtime) and `historical` categories and is derived directly from the Part 1 architecture and the authoritative run [1]. "ECCC realtime" denotes the Datamart bulk CSV plus the separate national `SRC-ECCC-GEOMET` hydrometric-realtime probe; "ECCC historical" denotes HYDAT + GeoMet daily/monthly/annual.
 
 | Jurisdiction | Realtime PRIMARY | Realtime BACKUP | Provincial-only? | Historical backbone |
 |---|---|---|---|---|
@@ -119,7 +124,7 @@ The following matrix is normative for the `current` (realtime) and `historical` 
 | SK | — (values scrape-only, `SRC-SK-WSA`, residual) | `SRC-ECCC-DATAMART` (SK) | no | HYDAT + GeoMet |
 | MB | `SRC-MB-FLOODINFO` (level/flow/forecast/alert) | `SRC-ECCC-DATAMART` (MB) | no | HYDAT + GeoMet |
 | ON | `SRC-ON-KIWIS` (SWMC KiWIS) | `SRC-ECCC-DATAMART` (ON) | no | HYDAT + GeoMet |
-| QC | `SRC-QC-VIGILANCE` (WFS) | **none** (ECCC carries only ~15 QC realtime stations) | **YES** | HYDAT + GeoMet |
+| QC | `SRC-QC-VIGILANCE` (WFS) | **none** (ECCC carries only 15 QC realtime stations) | **YES** | HYDAT + GeoMet |
 | NL | `SRC-NL-ADRS` (per-station CSV) | `SRC-ECCC-DATAMART` (NL) | no | HYDAT + GeoMet |
 | NB | — | `SRC-ECCC-DATAMART` (NB) | no | HYDAT + GeoMet |
 | NS | — | `SRC-ECCC-DATAMART` (NS) | no | HYDAT + GeoMet |
@@ -130,7 +135,7 @@ The following matrix is normative for the `current` (realtime) and `historical` 
 
 Notes on the matrix, all measured [1]:
 
-- ECCC Datamart per-jurisdiction record counts range from 5,571 rows / 9 stations (PE) to 317,748 rows / 523 stations (ON); QC returns only 9,191 rows / 15 stations — the evidence base for the QC exception.
+- The Datamart is **13 per-P/T hourly bundles plus 13 per-P/T daily bundles (26 Datamart probes)**; the *national* realtime feed is a **separate** source, `SRC-ECCC-GEOMET` (hydrometric-realtime), not Datamart. Per-jurisdiction **hourly** record counts range from 5,785 rows / 9 stations (PE) to 330,036 rows / 523 stations (ON); QC returns only 9,548 rows / 15 stations — the evidence base for the QC exception. The **daily** bundles are large (e.g. ON daily ≈ 4,529,607 rows, AB daily ≈ 3,492,229 rows, BC daily ≈ 3,719,013 rows). The realtime hydrometric station total across the 13 P/T hourly pulls is **2,175**.
 - Residual primaries (AB, BC-AQUARIUS, SK) are `sanctioned=False` and MUST NOT be promoted to `PRIMARY` in a commercial tier without the licence remediation of §9. In the non-commercial tier they MAY be primary with attribution.
 - For NB/NS/PE/YT/NT/NU there is no provincial programmatic river feed; these jurisdictions are ECCC-primary and the `chain` has a single entry.
 
@@ -172,28 +177,29 @@ An **adapter** encapsulates one wire protocol and one response shape; it produce
 
 ### 3.2 Adapter catalogue
 
-The following adapters SHALL be added. "Measured" columns cite `run_id=probes-20260916T090344Z` [1].
+The following adapters SHALL be added. "Measured" columns cite `run_id=probes-20260916T104357Z` [1].
 
 | Adapter (module) | Wire protocol | Sources it services | Categories | Measured evidence [1] | Auth / notes |
 |---|---|---|---|---|---|
-| `eccc_datamart` | Bulk hourly CSV over HTTPS | `SRC-ECCC-DATAMART` (all 13 P/T) | current | 13 provinces retrievable; e.g. ON 317,748 rows/523 stn @7238 ms; QC 9,191/15 | **Wire the dead `ECCC_DATAMART_BASE_URL`** (`config.py:33`); 10 fields; OGL-Canada/ECCC v2.1.1 |
-| `eccc_geomet_historical` | OGC API — Features (JSON) | `SRC-ECCC-GEOMET`, `SRC-ECCC-GEOMET-DAILY` | historical | monthly-mean, annual-statistics (1909→), annual-peaks (1923→) all `ok` | daily-mean **already wired** at `eccc_provider.py:383`; monthly/annual URLs exist in `config.py` but are **unused** — wire them here |
-| `eccc_climate` | OGC API — Features (JSON) | `SRC-ECCC-CLIMATE` | precip, stations, weather | climate-daily 184.7 M rows (1876→), climate-hourly 277.1 M rows, climate-stations 8,435 | OGL-Canada; large volumes — paginate/stream |
+| `eccc_datamart` | Bulk hourly + daily CSV over HTTPS | `SRC-ECCC-DATAMART` (all 13 P/T) | current | 26 probes (13 hourly + 13 daily) all `ok`; realtime station total across the 13 hourly pulls = 2,175; e.g. ON hourly 330,036 rows/523 stn @1424 ms, ON daily 4,529,607 rows @96.9 s; QC hourly 9,548/15; PE hourly 5,785/9; 10 fields | **Wire the dead `ECCC_DATAMART_BASE_URL`** (`config.py:33`); OGL-Canada/ECCC v2.1.1. National realtime is a **separate** source `SRC-ECCC-GEOMET` (hydrometric-realtime), not Datamart |
+| `eccc_geomet_historical` | OGC API — Features (JSON) | `SRC-ECCC-GEOMET`, `SRC-ECCC-GEOMET-DAILY` | historical, current, stations | daily-mean (1989→ sample), monthly-mean (1909→), annual-statistics (1909→), annual-peaks (1923→) all `ok`; per-P/T daily-mean earliest 1908 (AB) | daily-mean **already wired** at `eccc_provider.py:383`; monthly/annual URLs exist (`config.py:121,:125,:129`) but are **unused** — wire them here. Also serves the national hydrometric-realtime and per-P/T station probes |
+| `eccc_climate` | OGC API — Features (JSON) | `SRC-ECCC-CLIMATE` | precip, stations | climate-daily 184,672,664 rows (1949→) ≈ 184.7 M, climate-hourly 277,059,247 ≈ 277.1 M, climate-monthly 1,881,824 (1891→), climate-stations 8,435 | OGL-Canada; large volumes — paginate/stream |
 | `eccc_citypage` | XML (city) + CSV (site catalogue) | `SRC-ECCC-CITYPAGE` | weather | Calgary city XML 20 fields; 856-site catalogue CSV | OGL-Canada/ECCC; candidate weather backstop (§6) |
-| `eccc_aqhi` | OGC API — Features (JSON) | `SRC-ECCC-AQHI` | aqi | 6,996 obs / 10 stn @397 ms | AQHI 1–10 scale; feeds §6 AQHI→US-AQI mapping |
-| `kiwis` | KiWIS REST (KISTERS) | `SRC-ON-KIWIS` | stations, current | `getStationList` 4,436 stations @2004 ms | Ontario SWMC; OGL-Ontario |
-| `aquarius` | Aquarius Web Portal (undocumented) | `SRC-BC-AQUARIUS` | current | residual; smoke-validated in harness (Part 3) | OGL-BC; `sanctioned=False` — residual/scrape |
-| `arcgis_rest` | ArcGIS REST FeatureServer (JSON) | `SRC-BC-RFC`, `SRC-MB-FLOODINFO`, `SRC-ON-OIH`, `SRC-NRCAN-FLOOD` | flood, current, drainage | MB FloodInfo 248 rows/30 fields @231 ms; BC-RFC 5 warnings | Per-jurisdiction OGL / OpenMB |
-| `ogc_wfs` | OGC WFS (GeoJSON) | `SRC-QC-VIGILANCE`, `SRC-QC-GRHQ` | current, flood, drainage | QC Vigilance 50 stations/13 fields @505 ms | CC-BY-4.0 (Québec); Quebec provincial-only primary |
+| `eccc_aqhi` | OGC API — Features (JSON) | `SRC-ECCC-AQHI` | aqi | 7,241 obs / 10 stn @257 ms | AQHI 1–10 scale; feeds §6 AQHI→US-AQI mapping |
+| `kiwis` | KiWIS REST (KISTERS) | `SRC-ON-KIWIS` | stations, current | `getStationList` 4,436 stations @1890 ms | Ontario SWMC; OGL-Ontario |
+| `aquarius` | Aquarius Web Portal (undocumented) | `SRC-BC-AQUARIUS` | current | residual; smoke-validated in harness (Part 2/3) | OGL-BC; `sanctioned=False` — residual/scrape |
+| `arcgis_rest` | ArcGIS REST FeatureServer (JSON) | `SRC-BC-RFC`, `SRC-MB-FLOODINFO`, `SRC-ON-OIH`, `SRC-NRCAN-FLOOD` | flood, current, drainage | MB FloodInfo 248 rows/30 fields @222 ms; BC-RFC 5 notifications @742 ms | Per-jurisdiction OGL / OpenMB |
+| `ogc_wfs` | OGC WFS (GeoJSON) | `SRC-QC-VIGILANCE`, `SRC-QC-GRHQ` | current, flood, drainage | QC Vigilance 50 stations/13 fields @574 ms | CC-BY-4.0 (Québec); Quebec provincial-only primary |
 | `sensorthings` | OGC SensorThings API (JSON) | `SRC-STA-GW` (national/ON/QC) | groundwater | **DNS failure ×3** — host `mon.geosciences.ca` unresolvable | Fallback to `gin` (WMS) adapter — see §3.4 |
-| `gin` | OGC WMS `GetCapabilities` | `SRC-GIN` | groundwater | 44 layers @797 ms | Working alternative to failing SensorThings host |
-| `datastream_odata` | OData v4 (JSON) | `SRC-RIVTEMP` | watertemp | **HTTP 401** — API key required | Requires `x-api-key`; 2 req/s; commercial=conditional |
-| `erddap` | ERDDAP tabledap (JSON/CSV) | `SRC-CIOOS` | watertemp | CIOOS Atlantic catalogue 10 rows/16 fields @164 ms | CC-BY / OGL / CC0 per dataset |
-| `zenodo_dataset` | Static archive download + metadata | `SRC-CANSWE`, `SRC-CRID`, `SRC-LAKEICE` | snow, ice | CanSWE 4 rows (1928→) @4604 ms | Large downloads; run under `--no-downloads` in CI |
-| `custom_ab` | Per-station static JSON | `SRC-AB-RIVERS` | current | residual; intermittent connection refusal (measured) | GoA copyright, non-commercial; existing `AlbertaProvider` refactors onto this |
-| `custom_nl` | Per-station CSV | `SRC-NL-ADRS` | current, watertemp | 2,005 rows @599 ms; carries `WATER_TEMP` | OGL-NL |
-| `custom_mb` | AGOL CSV + HTML/PDF | `SRC-MB-FLOODINFO`, `SRC-MB-HFC` | current, flood | FloodInfo 248 rows @231 ms; HFC HTML/PDF 0 fields | OpenMB; HFC is unstructured (parse best-effort) |
-| `custom_qc` | CKAN + WFS | `SRC-QC-RSESQ`, `SRC-QC-GRHQ`, `SRC-QC-VIGILANCE` | groundwater, drainage, current | RSESQ 20 rows/53 fields @430 ms | CC-BY-4.0 (Québec) |
+| `gin` | OGC WMS `GetCapabilities` | `SRC-GIN` | groundwater | 44 layers @774 ms | Working substitute for the failing SensorThings host |
+| `datastream_odata` | OData v4 (JSON) | `SRC-RIVTEMP` | watertemp | **HTTP 401** — API key required | Requires `x-api-key` (request via form); 2 req/s; commercial=conditional |
+| `erddap` | ERDDAP tabledap (JSON/CSV) | `SRC-CIOOS` | watertemp | CIOOS Atlantic catalogue 10 rows/16 fields @152 ms | CC-BY / OGL / CC0 per dataset |
+| `zenodo_dataset` / CKAN | Static archive download + metadata; `open.canada.ca` CKAN `package_show` | `SRC-CANSWE`, `SRC-CRID`, `SRC-LAKEICE` | snow, ice | CanSWE 4 rows (1928→) @15.7 s; CRID 66 fields (1894–2015); LakeIce 64 fields — all `ok` | Large downloads; run under `--no-downloads` in CI |
+| `custom_ab` | Per-station static JSON | `SRC-AB-RIVERS` | current | residual (`sanctioned=False`); load behaviour PENDING Part 3a | GoA copyright, non-commercial; existing `AlbertaProvider` refactors onto this |
+| `custom_nl` | Per-station CSV | `SRC-NL-ADRS` | current, watertemp | 2,005 rows @692 ms; carries `WATER_TEMP` | OGL-NL |
+| `custom_mb` | AGOL CSV + HTML/PDF | `SRC-MB-FLOODINFO`, `SRC-MB-HFC` | current, flood | FloodInfo 248 rows @222 ms; HFC HTML/PDF 0 fields | OpenMB; HFC is unstructured (parse best-effort) |
+| `custom_qc` | CKAN + WFS | `SRC-QC-RSESQ`, `SRC-QC-GRHQ`, `SRC-QC-VIGILANCE` | groundwater, drainage, current | RSESQ 20 rows/53 fields @435 ms | CC-BY-4.0 (Québec) |
+| `bc_asws` | Wide CSV (four sibling files) | `SRC-BC-ASWS` | snow, precip, weather | SW + SD (snow), PC (precip), TA (weather); ≈ 8,411 rows / ≈ 121 stn per file | OGL-British Columbia; one source, four sibling CSVs |
 
 ### 3.3 Adapter interface
 
@@ -206,21 +212,27 @@ A thin `SourceAdapter` protocol SHALL be introduced in `app/services/providers/a
 
 Existing `AlbertaProvider` and `ECCCProvider` SHALL be refactored to *compose* adapters: `ECCCProvider` composes `eccc_datamart` (realtime) + `eccc_geomet_historical` (history); `AlbertaProvider` composes `custom_ab`. This is a non-behavioural refactor for the two live providers and MUST be covered by the existing test suite before new adapters land.
 
-### 3.4 Handling the six non-OK measured outcomes
+### 3.4 Handling the four non-OK measured outcomes
 
-The measured run returned six non-OK outcomes [1]; adapters SHALL interpret, not hide, them:
+The authoritative run returned **four** non-OK outcomes out of 102 sanctioned probes (98 `ok`, 3 `dns_error`, 1 `http_401_unauthorized`) [1]; adapters SHALL interpret, not hide, them:
 
 | Source | Outcome | Adapter behaviour |
 |---|---|---|
-| `SRC-STA-GW` ×3 | `dns_error` (host `mon.geosciences.ca` unresolvable) | `sensorthings` adapter SHALL surface a health warning and the resolver SHALL fall through to the `gin` WMS adapter for groundwater |
-| `SRC-RIVTEMP` | `http_401_unauthorized` | `datastream_odata` SHALL treat missing `x-api-key` as a *configuration* state, not an endpoint failure; disabled until a key is provided |
-| `SRC-ON-CO` | `http_404_upstream_missing` (page moved, HTML-only) | No adapter; documented as unavailable pending a machine-readable endpoint |
-| `SRC-ECCC-WATERPRED`, `SRC-CRID`, `SRC-LAKEICE` | `ok_empty` (reachable; light sample returned no rows/file link) | Adapters SHALL mark the source reachable and schedule a deeper query rather than reporting failure |
+| `SRC-STA-GW` ×3 (national/ON/QC) | `dns_error` — the officially-catalogued federal groundwater SensorThings host `mon.geosciences.ca` is currently unresolvable | `sensorthings` adapter SHALL surface a health warning and the resolver SHALL fall through to the `gin` WMS adapter (44 layers) for groundwater |
+| `SRC-RIVTEMP` | `http_401_unauthorized` — DataStream `x-api-key` required | `datastream_odata` SHALL treat the missing `x-api-key` as a *configuration* state, not an endpoint failure; disabled until a key is provided (request via form; honour 2 req/s) |
+
+There were **no 5xx failures** in the authoritative run: the `http_probe` retry policy (§10.4) absorbed 18 transient GeoMet 5xx that would otherwise have failed.
+
+Sources that were non-OK in earlier runs are now **retrievable** and SHALL be treated as available (no adapter should report them as failures):
+
+- `SRC-ON-CO` (Conservation Ontario) — now reachable via the flood-messages URL (HTML/PDF, 0 structured fields; parse best-effort).
+- `SRC-ECCC-WATERPRED` — **40 water-prediction WMS layers** via GeoMet WMS `GetCapabilities` (WCPS / OHPS / DHPS / RIOPS / CIOPS / surge); this is a WMS capability document, **not** OGC API — Features collections.
+- `SRC-CRID` (66 fields, 1894–2015) and `SRC-LAKEICE` (64 fields) — both via `open.canada.ca` CKAN `package_show`.
 
 ### 3.5 Requirements
 
 - R3.1 New adapters SHALL live under `app/services/providers/adapters/` and SHALL NOT perform database writes.
-- R3.2 The `eccc_datamart` adapter SHALL consume `ECCC_DATAMART_BASE_URL` (`config.py:33`), eliminating the configured-but-dead value.
+- R3.2 The `eccc_datamart` adapter SHALL consume `ECCC_DATAMART_BASE_URL` (`config.py:33`), eliminating the configured-but-dead value, and SHALL handle both the hourly and daily CSV bundles per P/T.
 - R3.3 The `eccc_geomet_historical` adapter SHALL wire the currently-unused `eccc_monthly_mean_url`, `eccc_annual_stats_url`, and `eccc_annual_peaks_url`; it SHALL NOT duplicate the daily-mean path already implemented at `eccc_provider.py:383`.
 - R3.4 Each adapter SHALL declare `capabilities` consumed by the resolver, and SHALL reuse a passed `httpx.AsyncClient` when provided.
 - R3.5 `AlbertaProvider` and `ECCCProvider` SHALL be refactored to compose adapters with no change to their externally observed behaviour, verified against the existing test suite.
@@ -237,7 +249,7 @@ Two independent constants currently govern historical retention, and they are co
 1. **Fetch window** — `settings.HISTORICAL_LOOKBACK_YEARS` (`config.py:87`, default `5`) sets how far back `_sync_province()` requests daily means (`historical_sync.py:106–109`): `start_date = now - 365 * HISTORICAL_LOOKBACK_YEARS`.
 2. **Prune depth** — a hardcoded module constant `MAX_YEARS = 5` (`historical_sync.py:37`) sets how many years `_prune_old_data()` keeps per `(station, data_key, month_day)` group (`historical_sync.py:311`, `:326`).
 
-Changing the environment variable today silently does **not** change the prune depth, so a deployment could fetch 20 years and then immediately prune 15 of them away. DS-STD-2026.1 requires that the deep validated archive be available; HYDAT is that archive, with a **measured span of 1860→2026 (167 years, 6,478 stations, 1,779,871 records)** [1].
+Changing the environment variable today silently does **not** change the prune depth, so a deployment could fetch 20 years and then immediately prune 15 of them away. DS-STD-2026.1 requires that the deep validated archive be available; HYDAT is that archive, with a **measured span of 1860→2026 (167 years, 6,478 stations, 1,779,871 records, 106 fields)** [1].
 
 ### 4.2 Change
 
@@ -290,7 +302,7 @@ DS-STD-2026.1 lists `SRC-WSC-BASINS` — WSC gauge drainage-basin polygons keyed
 
 ### 6.1 Position
 
-The frontend hard-depends on a rich forecast contract currently supplied only by Open-Meteo (`weather.py`): current `apparent_temperature`, `relative_humidity_2m`, `visibility`, `uv_index`, `wind_gusts_10m`, `is_day`; daily `precipitation_probability_max` and a **7-day** daily block; and air quality as **US AQI (0–500)** plus PM2.5 and PM10. Per Part 2, Open-Meteo's free tier is CC-BY-4.0 but **non-commercial only** (600/min, 5,000/hr, 10,000/day); commercial use requires a paid plan [2]. ECCC City Page (20 fields, measured [1]) and AQHI (1–10 scale, measured [1]) cannot fully reproduce this contract.
+The frontend hard-depends on a rich forecast contract currently supplied only by Open-Meteo (`weather.py`): current `apparent_temperature`, `relative_humidity_2m`, `visibility`, `uv_index`, `wind_gusts_10m`, `is_day`; daily `precipitation_probability_max` and a **7-day** daily block; and air quality as **US AQI (0–500)** plus PM2.5 and PM10. Per Part 3, Open-Meteo's free tier is CC-BY-4.0 but **non-commercial only** (600/min, 5,000/hr, 10,000/day); commercial use requires a paid plan [3]. ECCC City Page (20 fields, measured [1]) and AQHI (1–10 scale, measured [1]) cannot fully reproduce this contract.
 
 ### 6.2 Field-coverage decision matrix
 
@@ -316,7 +328,7 @@ Coverage of the frontend's hard-required fields by candidate source (measured fi
 Two viable paths; the project SHALL choose one explicitly:
 
 - **Option A — Keep Open-Meteo (status quo, non-commercial).** Zero engineering change. Acceptable *only* while the service remains non-commercial. Blocks monetization (§9) until switched.
-- **Option B — Switch the rich forecast to MET Norway Locationforecast (RECOMMENDED for a monetization-ready posture).** MET Norway is exact-coordinate, commercial-OK (CC-BY-4.0 / NLOD-2.0), and covers apparent temperature, humidity, UV, wind gusts, precipitation probability, and a multi-day daily block [1][2]. Gaps and mitigations:
+- **Option B — Switch the rich forecast to MET Norway Locationforecast (RECOMMENDED for a monetization-ready posture).** MET Norway is exact-coordinate, commercial-OK (CC-BY-4.0 / NLOD-2.0), and covers apparent temperature, humidity, UV, wind gusts, precipitation probability, and a multi-day daily block (measured: 11 fields / 89 records) [1][3]. Gaps and mitigations:
   - **`visibility`** — not provided by MET Norway. Either drop the field from the required contract or backfill from ECCC City Page's textual conditions (`~`). RECOMMENDED: make `visibility` optional in the contract.
   - **`is_day`** — derive from MET Norway sunrise/sunset (the existing code already extracts sunrise/sunset from the daily block, `weather.py:114–117`).
   - **Air quality** — MET Norway does not provide US AQI/PM. RECOMMENDED: source AQI from **ECCC AQHI** (commercial-OK) and either (a) map **AQHI (1–10) → US-AQI bands** for display continuity, or (b) switch the frontend AQI presentation to AQHI natively and keep PM2.5/PM10 from AQHI's constituent inputs where exposed. The AQHI→US-AQI mapping SHALL be documented as an approximation (the two indices are not linearly equivalent).
@@ -368,15 +380,15 @@ Part 1 catalogues nine categories beyond `current`/`historical`/`stations`. Each
 
 | Category | Sources (measured [1]) | Adapter(s) | New model (proposed) | Notes |
 |---|---|---|---|---|
-| Snow (SWE) | `SRC-CANSWE` (national, 1928→), `SRC-BC-ASWS` (121 stn, 8,409 rows) | `zenodo_dataset`, `arcgis_rest`/CSV | `snow_swe` | CanSWE is a large download — gate behind `--no-downloads` in CI |
-| Ice | `SRC-CRID` (196 NHP sites, 1894→), `SRC-CIS-ICE`, `SRC-LAKEICE` | `zenodo_dataset` | `river_ice` | CRID/LakeIce returned `ok_empty` — needs a deeper query (§3.4) |
-| Groundwater | `SRC-GIN` (44 WMS layers), `SRC-ON-PGMN`, `SRC-QC-RSESQ` | `gin` (WMS), `custom_qc`/CKAN | `groundwater_obs` | National SensorThings host is down (`dns_error`); GIN WMS is the working path |
-| Precip | `SRC-ECCC-CLIMATE` (climate-daily/hourly/monthly, RDPA/CaPA) | `eccc_climate` | `precip_obs` | Very large volumes (100M+ rows); ingest selectively by station/date |
+| Snow (SWE) | `SRC-CANSWE` (national, 1928→), `SRC-BC-ASWS` (SW + SD; ≈ 121 stn, ≈ 8,411 rows), `SRC-AB-SNOW` (pillows, residual) | `zenodo_dataset`, `bc_asws` | `snow_swe` | CanSWE is a large download — gate behind `--no-downloads` in CI; `SRC-AB-SNOW` is `sanctioned=False` (residual) |
+| Ice | `SRC-CRID` (196 NHP sites, 1894–2015, 66 fields), `SRC-CIS-ICE`, `SRC-LAKEICE` (64 fields) | `zenodo_dataset` / CKAN | `river_ice` | CRID and LakeIce now retrievable via `open.canada.ca` CKAN `package_show`; CIS-ICE is an unstructured data page (0 fields) |
+| Groundwater | `SRC-GIN` (44 WMS layers), `SRC-ON-PGMN`, `SRC-QC-RSESQ` | `gin` (WMS), `custom_qc`/CKAN | `groundwater_obs` | National SensorThings host `mon.geosciences.ca` is down (`dns_error`); GIN WMS is the working path |
+| Precip | `SRC-ECCC-CLIMATE` (climate-daily ≈ 184.7 M / hourly ≈ 277.1 M / monthly; RDPA/CaPA), `SRC-BC-ASWS` (accumulated precip) | `eccc_climate`, `bc_asws` | `precip_obs` | Very large volumes (100 M+ rows); ingest selectively by station/date |
 | Drainage GIS | `SRC-WSC-BASINS`, `SRC-NHN`, `SRC-BC-FWA`, `SRC-ON-OIH`, `SRC-QC-GRHQ`, `SRC-HYDROSHEDS` | `arcgis_rest`, `ogc_wfs` | `station_basins` (§5) | Powers §5 real drainage basins |
-| Water temp | `SRC-CIOOS` (Atlantic ERDDAP), `SRC-RIVTEMP` (needs key), `SRC-NL-ADRS` (`WATER_TEMP`) | `erddap`, `datastream_odata`, `custom_nl` | `water_temp_obs` | RivTemp needs `x-api-key` |
-| Flood | `SRC-BC-RFC`, `SRC-MB-HFC`, `SRC-QC-VIGILANCE`, `SRC-NRCAN-FLOOD` | `arcgis_rest`, `ogc_wfs` | `flood_warning` | Conservation Ontario (`SRC-ON-CO`) is 404/HTML-only — excluded until an API exists |
+| Water temp | `SRC-CIOOS` (Atlantic ERDDAP), `SRC-RIVTEMP` (needs key), `SRC-NL-ADRS` (`WATER_TEMP`) | `erddap`, `datastream_odata`, `custom_nl` | `water_temp_obs` | RivTemp needs `x-api-key` (request via form; 2 req/s) |
+| Flood | `SRC-BC-RFC`, `SRC-ECCC-WATERPRED` (40 WMS layers), `SRC-MB-HFC`, `SRC-QC-VIGILANCE`, `SRC-NRCAN-FLOOD`, `SRC-ON-CO` | `arcgis_rest`, `ogc_wfs`, WMS `GetCapabilities` | `flood_warning` | All six flood sources now retrievable; `SRC-ON-CO` reachable via the flood-messages URL (HTML/PDF, parse best-effort); `SRC-ECCC-WATERPRED` is WMS layers, not OGC API — Features |
 | AQI | `SRC-ECCC-AQHI`, `SRC-OPEN-METEO-AQI` | `eccc_aqhi` | (reuse `StationWeather.air_quality`) | Feeds §6 |
-| Weather | `SRC-ECCC-CITYPAGE`, `SRC-MET-NORWAY`, `SRC-OPEN-METEO` | `eccc_citypage`, MET adapter | (reuse `StationWeather`) | Feeds §6 |
+| Weather | `SRC-ECCC-CITYPAGE`, `SRC-MET-NORWAY`, `SRC-OPEN-METEO`, `SRC-BC-ASWS` (air temp) | `eccc_citypage`, MET adapter, `bc_asws` | (reuse `StationWeather`) | Feeds §6 |
 
 ### 8.3 Requirements
 
@@ -390,25 +402,25 @@ Part 1 catalogues nine categories beyond `current`/`historical`/`stations`. Each
 
 ### 9.1 Position
 
-The service is currently public-good and non-commercial. Part 2 establishes that a hypothetical commercial tier is capped by the **most-restrictive upstream term**, and identifies the specific blockers [2]:
+The service is currently public-good and non-commercial. Part 3 establishes that a hypothetical commercial tier is capped by the **most-restrictive upstream term**, and identifies the specific blockers [3]:
 
-- **Alberta `rivers.alberta.ca`** — Government of Alberta copyright; commercial = **NO** without written permission; `sanctioned=False`; intermittent connection refusal (measured [1][3]).
-- **Saskatchewan WSA** — SK Crown copyright; commercial = **NO** without written permission; values scrape-only.
-- **Open-Meteo free tier** — commercial requires a paid plan; otherwise non-commercial only [2].
-- Everything else is commercial-OK **with attribution** (ECCC OGL-Canada/ECCC v2.1.1; provincial OGL-\<jurisdiction\>; MB OpenMB; QC CC-BY-4.0; MET Norway CC-BY-4.0/NLOD-2.0; HydroSHEDS; CIOOS). RivTemp is **conditional** (per-dataset licence + API key).
+- **Alberta `rivers.alberta.ca` (`SRC-AB-RIVERS`)** — Government of Alberta copyright; commercial = **NO** without written permission; `sanctioned=False` (residual). Full-cadence load behaviour is PENDING — Part 3a addendum (run `stress-20260916T105739Z` in progress) [3].
+- **Saskatchewan WSA (`SRC-SK-WSA`)** — SK Crown copyright; commercial = **NO** without written permission (`no-written-permission`); values scrape-only; `sanctioned=False` (residual). Full-cadence load behaviour is PENDING — Part 3a addendum (run `stress-20260916T105739Z` in progress) [3].
+- **Open-Meteo free tier** — commercial requires a paid plan; otherwise non-commercial only. Three sanctioned probes carry `non-commercial`: `SRC-OPEN-METEO` (forecast), `SRC-OPEN-METEO-AQI` (air quality), and `SRC-OPEN-METEO-ARCHIVE` (ERA5 historical) [3].
+- Everything else is commercial-OK **with attribution** (ECCC OGL-Canada/ECCC v2.1.1; provincial OGL-\<jurisdiction\>; MB OpenMB; QC CC-BY-4.0; MET Norway CC-BY-4.0/NLOD-2.0; HydroSHEDS; CIOOS). RivTemp is **conditional** (per-dataset licence + API key). Two flood sources (`SRC-MB-HFC`, `SRC-ON-CO`) carry `unknown` terms and SHALL be treated as non-commercial until clarified [3].
 
 ### 9.2 Change — a commercial gate
 
 A configuration flag `COMMERCIAL_MODE` (default `False`) SHALL gate source admissibility, enforced **in the resolver (§2)**, not scattered through adapters:
 
-- When `COMMERCIAL_MODE = True`, the resolver SHALL exclude any `SourceRef` whose `commercial_ok` is `no` or `non_commercial`. Concretely, this drops `SRC-AB-RIVERS`, `SRC-SK-WSA`, and the Open-Meteo free tier from all chains.
+- When `COMMERCIAL_MODE = True`, the resolver SHALL exclude any `SourceRef` whose `commercial_ok` is `non_commercial`, `no_written_permission`, `unknown`, or `no`. Concretely, this drops `SRC-AB-RIVERS` (non-commercial), `SRC-SK-WSA` (no-written-permission), and the three Open-Meteo non-commercial probes (forecast, air-quality, ERA5 archive) from all chains.
 - Dropped provincial realtime SHALL fall through to the ECCC backup already in the chain (Datamart AB/SK), so coverage degrades gracefully rather than disappearing. AB/SK become ECCC-primary in commercial mode.
 - The weather/AQI stack SHALL switch off Open-Meteo to **MET Norway + ECCC AQHI/City Page** (§6, Option B). `COMMERCIAL_MODE = True` SHALL be incompatible with an Open-Meteo weather adapter and the system SHALL refuse to start in that combination (fail-fast configuration validation).
 - RivTemp (`conditional`) MAY be admitted in commercial mode only when a valid `x-api-key` and per-dataset commercial licence are configured.
 
 ### 9.3 Attribution enforcement
 
-Each `SourceRef` carries its required attribution string (from Part 2). The API SHALL emit, per response and/or in an app-wide credits surface, the attribution for every source that contributed data, including but not limited to:
+Each `SourceRef` carries its required attribution string (from Part 3). The API SHALL emit, per response and/or in an app-wide credits surface, the attribution for every source that contributed data, including but not limited to:
 
 - ECCC: "Data Source: Environment and Climate Change Canada".
 - Manitoba: "Contains information … OpenMB Information and Data Use License (Manitoba.ca/OpenMB)".
@@ -426,7 +438,7 @@ Adapters SHALL respect the measured/known upstream ceilings: ECCC contact-MSC th
 ### 9.5 Requirements
 
 - R9.1 A `COMMERCIAL_MODE` flag SHALL gate source admissibility in the resolver.
-- R9.2 In commercial mode the resolver SHALL exclude `commercial_ok ∈ {no, non_commercial}` sources (AB portal, SK WSA, Open-Meteo free tier) and fall through to ECCC backups.
+- R9.2 In commercial mode the resolver SHALL exclude `commercial_ok ∈ {no, non_commercial, no_written_permission, unknown}` sources (AB portal, SK WSA, the three Open-Meteo probes, and the two `unknown` flood sources) and fall through to ECCC backups.
 - R9.3 Commercial mode SHALL fail-fast if configured with an Open-Meteo weather adapter.
 - R9.4 The system SHALL emit the correct attribution string for every contributing source and keep the project licence distinct from upstream licences.
 - R9.5 All adapters SHALL enforce the documented upstream acceptable-use ceilings.
@@ -443,7 +455,7 @@ The changes are sequenced so each phase is independently shippable and reversibl
 |---|---|---|---|
 | P0 | Adapter base + refactor `AlbertaProvider`/`ECCCProvider` onto adapters (§3.3, non-behavioural) | — | Low; guarded by existing tests |
 | P1 | Resolver module + resolver-driven `_merge_readings` + QC provincial-only (§2) | P0 | Medium; changes merge semantics |
-| P2 | Wire `eccc_datamart` (dead URL) + `eccc_geomet_historical` (unused monthly/annual URLs) (§3) | P0 | Low |
+| P2 | Wire `eccc_datamart` (dead URL; hourly + daily) + `eccc_geomet_historical` (unused monthly/annual URLs) (§3) | P0 | Low |
 | P3 | Unify historical depth into one env var; full-record via HYDAT (§4) | — | Low; config-only + prune change |
 | P4 | QA/QC symbol exposure (§7) | P2 (Datamart grade) | Low |
 | P5 | Weather/AQI decision + weather adapter (§6) | P0 | Medium; frontend contract-sensitive |
@@ -470,24 +482,25 @@ New Alembic migrations SHALL be authored (following the existing `alembic/versio
   docker-compose run --rm -w /app backend python -m tests.probe_sources --source SRC-ECCC-DATAMART
   ```
 
-  The pass bar is the measured baseline: **80/86 sanctioned probes retrievable** [1]. The six known non-OK outcomes (§3.4) are expected and SHALL be interpreted, not counted as regressions, unless a previously-OK source degrades.
+  The pass bar is the authoritative baseline: **98/102 sanctioned probes retrievable** [1]. The four known non-OK outcomes (§3.4) — 3× `SRC-STA-GW` (`dns_error`) and 1× `SRC-RIVTEMP` (`http_401`) — are expected and SHALL be interpreted, not counted as regressions, unless a previously-OK source degrades.
+- **Transient-retry methodology (Part 2 [2]).** The sanctioned harness's `http_probe` now **retries transient failures** — HTTP 5xx/429 and connect/read timeouts, bounded and honouring `Retry-After`. Enabling retries absorbed 18 transient GeoMet 5xx and took the authoritative run from **80/102 to 98/102** retrievable; there were no residual 5xx. Tests SHALL confirm the retry path is exercised and that a permanent failure (e.g. `dns_error`, `http_401`) is **not** retried into a false positive.
 - **Resolver unit tests.** The resolver (§2) SHALL have table-driven unit tests asserting: provincial-primary precedence per jurisdiction; QC provincial-only (no ECCC realtime admitted); and `COMMERCIAL_MODE` exclusion of AB/SK/Open-Meteo (§9).
 - **Historical depth tests.** Tests SHALL assert that `HISTORICAL_DEPTH_YEARS = 0` yields an unbounded fetch and a no-op prune, and that `N > 0` fetches `N` years and prunes to `N` (§4).
-- **Residual harness.** The residual/scrape sources SHALL continue to be exercised only by the user-launched gentle overnight harness (`tests/stress_test.py`); its dated results become the Part 3 addendum [3] and SHALL NOT run in CI.
+- **Residual harness.** The 4 residual/scrape sources (`SRC-AB-RIVERS`, `SRC-BC-AQUARIUS`, `SRC-SK-WSA`, `SRC-AB-SNOW`) SHALL continue to be exercised only by the user-launched gentle harness (`tests/stress_test.py`), which runs with `retries = 0`, **skips a blocked target per-target** rather than aborting the whole run, and triggers a **global abort only on 3+ consecutive cross-target blocks** (Part 2 [2]). Its dated results become the **Part 3a addendum** (run `stress-20260916T105739Z`, in progress) [3] and SHALL NOT run in CI. (Note: the Open-Meteo rapid-burst is a stress-harness *target*, not a registered probe.)
 
 ### 10.5 Acceptance criteria (summary)
 
-The implementation is complete when: (a) source priority is declarative and resolver-driven with QC provincial-only enforced (§2); (b) the dead Datamart URL and unused GeoMet historical URLs are live (§3); (c) a single env var governs historical fetch+prune with a working full-record mode backed by HYDAT (§4); (d) `station_basins` carries real WSC basin geometry keyed to `STATION_NUMBER` (§5); (e) the weather/AQI source is behind a swappable adapter with a recorded source decision (§6); (f) QA/QC symbols reach the API and UI (§7); (g) `COMMERCIAL_MODE` correctly gates AB/SK/Open-Meteo and enforces attribution (§9); and (h) `tests.probe_sources` still reports ≥ 80/86 sanctioned probes retrievable with no previously-OK source regressed (§10.4).
+The implementation is complete when: (a) source priority is declarative and resolver-driven with QC provincial-only enforced (§2); (b) the dead Datamart URL and unused GeoMet historical URLs are live (§3); (c) a single env var governs historical fetch+prune with a working full-record mode backed by HYDAT (§4); (d) `station_basins` carries real WSC basin geometry keyed to `STATION_NUMBER` (§5); (e) the weather/AQI source is behind a swappable adapter with a recorded source decision (§6); (f) QA/QC symbols reach the API and UI (§7); (g) `COMMERCIAL_MODE` correctly gates AB/SK/Open-Meteo and enforces attribution (§9); and (h) `tests.probe_sources` still reports ≥ **98/102** sanctioned probes retrievable with no previously-OK source regressed (§10.4).
 
 ---
 
 ## References
 
-[1] WaterPulse Data Engineering, "WaterPulse Data-Source Standard (DS-STD-2026.1), Part 1 — Source Registry and Architecture," 2026-09-16. Measured verification run `run_id=probes-20260916T090344Z` (80/86 sanctioned probes retrievable in 186.7 s; `coverage.csv`, `coverage_summary.json`). Persistent identifier: TBD.
+[1] WaterPulse Data Engineering, "WaterPulse Data-Source Standard (DS-STD-2026.1), Part 1 — Standard & Reconnaissance," 2026-09-16. Authoritative verification run `run_id=probes-20260916T104357Z` (98/102 sanctioned probes retrievable in 631.4 s; registry 106 probes = 102 sanctioned + 4 residual, 41 Source IDs, 12 categories; `coverage.csv`, `coverage_summary.json`). Persistent identifier: urn:waterpulse:ds-std:2026.1.
 
-[2] WaterPulse Data Engineering, "WaterPulse Data-Source Standard (DS-STD-2026.1), Part 2 — Usage Rights and Monetization," 2026-09-16. Persistent identifier: TBD.
+[2] WaterPulse Data Engineering, "WaterPulse Data-Source Standard (DS-STD-2026.1), Part 2 — Methodology & Test Suite," 2026-09-16. `http_probe` transient-retry policy and residual-harness (skip/abort) design. Persistent identifier: urn:waterpulse:ds-std:2026.1.
 
-[3] WaterPulse Data Engineering, "WaterPulse Data-Source Standard (DS-STD-2026.1), Part 3 — Residual Scrape Harness Addendum," 2026-09-16. Persistent identifier: TBD.
+[3] WaterPulse Data Engineering, "WaterPulse Data-Source Standard (DS-STD-2026.1), Part 3 — Results & Verified Standard," 2026-09-16. Per-source coverage, usage rights, and monetization; residual load measurements pending the dated Part 3a addendum (run `stress-20260916T105739Z`, in progress). Persistent identifier: urn:waterpulse:ds-std:2026.1.
 
 [4] Environment and Climate Change Canada / Meteorological Service of Canada, "GeoMet — OGC API," Government of Canada. [Online]. Available: https://api.weather.gc.ca . Accessed: 2026-09-16.
 
@@ -511,9 +524,9 @@ The implementation is complete when: (a) source priority is declarative and reso
 
 [14] Gouvernement du Québec, "Vigilance — Surveillance de la crue des rivières (WFS)." [Online]. Available: https://www.cehq.gouv.qc.ca/ . Accessed: 2026-09-16.
 
-[15] Geological Survey of Canada / Groundwater Information Network, "GIN OGC Web Services and SensorThings API." [Online]. Available: https://gin.gw-info.net/ . Accessed: 2026-09-16.
+[15] Geological Survey of Canada / Groundwater Information Network, "GIN OGC Web Services and SensorThings API." [Online]. Available: https://gin.geosciences.ca/ . Accessed: 2026-09-16.
 
-[16] DataStream, "DataStream OData v4 API (RivTemp datasets)." [Online]. Available: https://datastream.org/ . Accessed: 2026-09-16.
+[16] DataStream, "DataStream OData v4 API (RivTemp datasets) — API documentation." [Online]. Available: https://github.com/datastreamapp/api-docs . Accessed: 2026-09-16.
 
 [17] Canadian Integrated Ocean Observing System (CIOOS) Atlantic, "ERDDAP data server." [Online]. Available: https://cioosatlantic.ca/erddap/ . Accessed: 2026-09-16.
 
@@ -531,6 +544,6 @@ The implementation is complete when: (a) source priority is declarative and reso
 
 [24] S. Bradner, "Key words for use in RFCs to Indicate Requirement Levels," RFC 2119, IETF, March 1997. [Online]. Available: https://www.rfc-editor.org/rfc/rfc2119 . Accessed: 2026-09-16.
 
-[25] Open Geospatial Consortium, "OGC API — Features, OGC SensorThings API, and Web Feature Service (WFS) standards." [Online]. Available: https://www.ogc.org/standards/ . Accessed: 2026-09-16.
+[25] Open Geospatial Consortium, "OGC API — Features, OGC SensorThings API, OGC Web Map Service (WMS), and Web Feature Service (WFS) standards." [Online]. Available: https://www.ogc.org/standards/ . Accessed: 2026-09-16.
 
 [26] Government of Canada, "Open Government Licence – Canada, version 2.0." [Online]. Available: https://open.canada.ca/en/open-government-licence-canada . Accessed: 2026-09-16.
