@@ -67,7 +67,10 @@ yarn-error.log*
 waterpulse-backend/test_*.py
 waterpulse-backend/test_*.json
 waterpulse-backend/*_results.json
-waterpulse-backend/tests/
+# DS-STD-2026.1 verification suite IS tracked; ignore only its runtime outputs
+# (raw evidence is local-only; distilled evidence lives in docs/reports/).
+waterpulse-backend/tests/logs/
+waterpulse-backend/tests/**/__pycache__/
 waterpulse-backend/pytest.ini
 waterpulse-backend/requirements-dev.txt
 

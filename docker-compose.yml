@@ -111,6 +111,12 @@ services:
       # Changes to Python files on the host are reflected inside the container.
       - ./waterpulse-backend/app:/app/app
       - ./waterpulse-backend/alembic:/app/alembic
+      # Data-source verification test suite (DS-STD-2026.1). A sibling of app/
+      # is otherwise invisible in the container (Dockerfile copies only app/ +
+      # alembic/, and .dockerignore strips test_*.py); this bind mount makes it
+      # runnable via `docker-compose run -w /app backend python -m tests.<mod>`
+      # and surfaces tests/logs/ outputs on the host.
+      - ./waterpulse-backend/tests:/app/tests
     # The --reload flag is passed as extra args to uvicorn via entrypoint.sh.
     # Remove this in production (use docker-compose.prod.yml override).
     command: ["--reload"]
