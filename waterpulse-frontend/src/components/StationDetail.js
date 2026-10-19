@@ -295,9 +295,17 @@ export default function StationDetail({ stationNumber, onClose, refreshButton = 
 
           {/* ── Readings + Ratings card ──── */}
           <div className="rounded-xl border border-slate-200 bg-white p-6">
-            <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wider mb-4">
-              Current Readings
-            </h2>
+            <div className="flex items-center justify-between mb-4 gap-2">
+              <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wider">
+                Current Readings
+              </h2>
+              <a
+                href="/methodology#ratings"
+                className="text-xs text-[#1e6ba8] hover:underline whitespace-nowrap"
+              >
+                How is this calculated?
+              </a>
+            </div>
 
             {/* Stat row */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-1 mb-6 bg-slate-50 rounded-lg">

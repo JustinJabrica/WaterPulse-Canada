@@ -7,6 +7,7 @@ const NAV_LINKS = [
   { label: "Collections", href: "/collections" },
   { label: "Discover", href: "/collections/discover" },
   { label: "Advanced Data", href: "/advanced-data" },
+  { label: "Data & Methodology", href: "/methodology" },
   { label: "About", href: "/about" },
   { label: "Contact", href: "/contact" },
 ];
@@ -45,7 +46,11 @@ export default function Footer() {
             Water data is provisional and sourced from Environment and Climate Change
             Canada (ECCC) and provincial networks including the Government of Alberta. It
             has not been reviewed for accuracy and may be subject to change. WaterPulse
-            assumes no responsibility for data accuracy. Use at your own risk.
+            assumes no responsibility for data accuracy. Use at your own risk.{" "}
+            <Link href="/methodology#reliability" className="text-slate-400 hover:text-white underline">
+              How we source &amp; rate data
+            </Link>
+            .
           </p>
           <p className="text-xs text-slate-600 shrink-0">
             &copy; {new Date().getFullYear()} WaterPulse
