@@ -1,0 +1,11 @@
+# Runtime probe/harness outputs — raw evidence is local-only; the distilled
+# evidence tables live in docs/reports/ (DS-STD-2026.1 Part 3).
+logs/
+# Cached source downloads (HYDAT SQLite, zips) — large, fetched on demand.
+*.sqlite3
+*.sqlite
+*.zip
+*.gpkg
+*.nc
+__pycache__/
+*.pyc
