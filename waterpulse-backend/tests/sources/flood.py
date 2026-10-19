@@ -42,14 +42,13 @@ Citation / references:
 """
 from __future__ import annotations
 
-import re
-
 from tests.sources._base import (
     ProbeContext,
     fields_from_json,
     http_probe,
     register,
 )
+from tests.sources._geomet import probe_geomet_wms_layers
 from tests.stress import classify
 from tests.stress.http_client import build_client
 from tests.stress.metrics import TestResult
@@ -58,48 +57,21 @@ from tests.stress.metrics import TestResult
 # WCPS/OHPS/RIOPS/CIOPS/storm-surge are gridded WMS/coverage products, NOT
 # OGC-API-Features collections (the api.weather.gc.ca/collections catalogue
 # contains no such id — confirmed), so we enumerate them from the GeoMet WMS
-# GetCapabilities layer inventory (the same GetCapabilities technique the working
-# GIN groundwater probe uses). The caps document is large; timeout is raised.
-GEOMET_WMS = "https://geo.weather.gc.ca/geomet"
+# GetCapabilities layer inventory via the shared `_geomet` helper. DHPS (the
+# Deterministic Hydrological Prediction System — 1 km river-discharge routing,
+# the closest thing to a national streamflow forecast) is among these keys, but
+# it is a raster map layer, not a point/reach-queryable API: a forecast value at
+# a lat/lon needs WMS GetFeatureInfo / WCS / GRIB2. The caps document is large;
+# the helper raises the timeout to >=120 s.
 _WATER_PRED_KEYS = ("WCPS", "OHPS", "DHPS", "RDWPS", "GDWPS", "RIOPS", "CIOPS", "SURGE")
 
 
 async def _probe_eccc_waterpred(spec, ctx: ProbeContext) -> TestResult:
-    recs = []
-    params = {"SERVICE": "WMS", "VERSION": "1.3.0", "REQUEST": "GetCapabilities", "lang": "en"}
-    async with build_client(timeout=max(120.0, ctx.request_timeout)) as client:
-        f = await http_probe(
-            ctx, client, GEOMET_WMS, source_id=spec.source_id,
-            category=spec.category, params=params, from_metadata=True,
-            notes="GeoMet WMS 1.3.0 GetCapabilities (water-prediction layers)",
-        )
-        recs.append(f.record)
-        if not f.ok:
-            return spec.result(
-                retrievable=False, reason_category=f.record.reason_category,
-                reason_detail=f.record.reason_detail, endpoint=GEOMET_WMS, requests=recs,
-            )
-        text = f.text or ""
-        names = re.findall(r"<Name>([^<]+)</Name>", text)
-        matched = sorted({n for n in names if any(k in n.upper() for k in _WATER_PRED_KEYS)})
-        is_caps = ("WMS_Capabilities" in text or "WMT_MS_Capabilities" in text
-                   or "<Layer" in text)
-        if not is_caps:
-            reason = classify.PARSE_ERROR
-        elif matched:
-            reason = classify.OK
-        else:
-            reason = classify.OK_EMPTY
-        f.record.records_parsed = len(matched)
-        return spec.result(
-            retrievable=bool(matched), reason_category=reason, endpoint=GEOMET_WMS,
-            fields_found=matched[:40], record_count=len(matched),
-            latency_ms=f.record.latency_ms, sample="; ".join(matched[:20])[:800],
-            requests=recs,
-            notes=f"{len(matched)} water-prediction WMS layers "
-                  f"(WCPS/OHPS/DHPS/RIOPS/CIOPS/surge) of {len(names)} total <Name> in caps",
-            extra={"match_keys": list(_WATER_PRED_KEYS), "total_layer_names": len(names)},
-        )
+    return await probe_geomet_wms_layers(
+        spec, ctx, match_keys=_WATER_PRED_KEYS,
+        notes="ECCC GeoMet water-prediction layers "
+              "(WCPS/OHPS/DHPS/RDWPS/GDWPS/RIOPS/CIOPS/surge)",
+    )
 
 
 # ── (c) BC River Forecast Centre flood notifications (ArcGIS) ────────
@@ -268,6 +240,24 @@ async def _probe_mb_hfc(spec, ctx: ProbeContext) -> TestResult:
     )
 
 
+# ── (f) ECCC CAP public weather alerts (Datamart) — national alert layer ─
+# The uniform, machine-readable (CAP 1.2 XML) national layer that fills the gap
+# between the five provincial flood services above: it carries rainfall, flood,
+# freezing-rain, wind and thunderstorm warnings for all 13 P/T (the same feed
+# that drives Alert Ready). We confirm the Datamart alerts root is reachable
+# (an autoindex of per-office directories); individual .cap files live under
+# today/alerts/cap/{YYYYMMDD}/{OFFICE}/{hh}/.
+ECCC_CAP_URL = "https://dd.weather.gc.ca/today/alerts/cap/"
+
+
+async def _probe_eccc_cap(spec, ctx: ProbeContext) -> TestResult:
+    return await _probe_html(
+        spec, ctx, ECCC_CAP_URL,
+        "ECCC CAP 1.2 XML public weather alerts (Datamart autoindex of office "
+        "dirs); national, incl. rainfall/flood/thunderstorm warnings",
+    )
+
+
 # ── Registration ────────────────────────────────────────────────────
 register(
     test_id="flood-eccc-waterpred-ca",
@@ -330,3 +320,13 @@ register(
     commercial_ok="unknown",
     sanctioned=True,
 )(_probe_mb_hfc)
+
+register(
+    test_id="flood-eccc-cap-alerts",
+    category="flood",
+    source_id="SRC-ECCC-CAP",
+    label="ECCC CAP public weather alerts (Datamart, national)",
+    jurisdiction="CA",
+    licence="OGL-Canada / ECCC MSC End-use Licence",
+    commercial_ok="yes",
+)(_probe_eccc_cap)

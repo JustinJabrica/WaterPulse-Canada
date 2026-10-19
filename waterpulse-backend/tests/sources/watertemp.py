@@ -41,12 +41,13 @@ from tests.sources._base import (
     http_probe,
     register,
 )
+from tests.sources._datastream import ODATA_BASE, datastream_headers, have_key
 from tests.stress import classify
 from tests.stress.http_client import build_client
 from tests.stress.metrics import TestResult
 
 # ── (a) RivTemp via DataStream OData v4 Public API ──────────────────
-RIVTEMP_URL = "https://api.datastream.org/v1/odata/v4/Metadata"
+RIVTEMP_URL = f"{ODATA_BASE}/Metadata"
 
 # ── (b) CIOOS Atlantic ERDDAP dataset catalogue ─────────────────────
 CIOOS_BASE = "https://cioosatlantic.ca/erddap/"
@@ -68,21 +69,24 @@ async def probe_rivtemp(spec, ctx: ProbeContext) -> TestResult:
     async with build_client(timeout=ctx.request_timeout) as client:
         f = await http_probe(
             ctx, client, RIVTEMP_URL, source_id=spec.source_id,
-            category=spec.category, params={"$top": 1}, from_metadata=False,
+            category=spec.category, params={"$top": 1}, headers=datastream_headers(),
+            from_metadata=False,
             notes="DataStream OData v4 Metadata; x-api-key header required",
         )
         recs.append(f.record)
         if not f.ok:
             # HTTP 401 with no x-api-key is the DOCUMENTED expected outcome.
             if f.record.reason_category == classify.HTTP_401:
-                note = "DataStream API key required (x-api-key); 2 req/s"
+                note = ("DataStream API key required (x-api-key); set "
+                        "WP_DATASTREAM_API_KEY. 2 req/s")
             else:
                 note = f"DataStream Metadata probe failed: {f.record.reason_detail}"
             return spec.result(
                 retrievable=False, reason_category=f.record.reason_category,
                 reason_detail=f.record.reason_detail, endpoint=RIVTEMP_URL,
                 latency_ms=f.record.latency_ms, requests=recs, notes=note,
-                extra={"expected_without_key": "HTTP 401", "rate_limit": "2 req/s"},
+                extra={"expected_without_key": "HTTP 401", "rate_limit": "2 req/s",
+                       "key_present": have_key()},
             )
         # If a key is configured upstream and the call succeeds, inventory it.
         try:

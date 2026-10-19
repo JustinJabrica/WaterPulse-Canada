@@ -21,6 +21,7 @@ tests/
   stress_test.py       # residual gentle harness for scrape sources (MANUAL launch only)
   sources/*.py         # one module per source; each @register(...)s its probes
   stress/              # shared harness internals (metrics/logging, classifier, HTTP client, runner)
+  topology/            # deep HydroRIVERS corridor-routing proof (manual; needs pyshp + NA shapefile)
   logs/                # run outputs (gitignored): requests.csv, tests.csv, coverage.csv, per-test JSON
 ```
 Every test emits its **full evidence** — per-request rows in `logs/<run_id>/requests.csv`, a
@@ -41,7 +42,17 @@ docker compose run --rm -T --no-deps --entrypoint python backend -m tests.probe_
 
 # Residual gentle harness (scrape/touchy sources; runs for hours) — YOU launch this:
 docker compose run -d --name wp-stress --no-deps --entrypoint python backend -m tests.stress_test --targets ab,sk,bc --max-hours 10
+
+# DataStream water-quality + river-temp probes need a free x-api-key (pass it through):
+docker compose run --rm -T --no-deps -e WP_DATASTREAM_API_KEY=<key> --entrypoint python backend -m tests.probe_sources --category waterquality
+
+# Deep corridor-routing proof (NOT a probe; manual). Needs `pip install pyshp` + the NA HydroRIVERS
+# shapefile from https://data.hydrosheds.org/file/hydrorivers/HydroRIVERS_v10_na_shp.zip :
+python -m tests.topology.hydrorivers_routing /path/to/HydroRIVERS_v10_na.shp
 ```
+
+New categories since DS-STD-2026.2 (see `docs/reports/ds-std-2026.2_…`): `waterquality`, `tides`,
+`wildfire`, plus river-network topology under `drainage` and radar/HRDPA/lightning under `precip`.
 Outputs appear on the host under `waterpulse-backend/tests/logs/<run_id>/` (bind-mounted).
 Stop the residual run with `docker stop wp-stress`; resume with `--resume <run_id>`.
 
@@ -69,8 +80,13 @@ Stop the residual run with `docker stop wp-stress`; resume with `--resume <run_i
 - **Québec**: CC-BY 4.0 (Québec) — commercial OK — attribute *Gouvernement du Québec*.
 - **MET Norway**: CC-BY / NLOD — commercial OK — *"Data from MET Norway"* (descriptive UA required).
 - **Open-Meteo**: CC-BY 4.0 — **free tier non-commercial only** — *"Weather data by Open-Meteo.com."*
-- **RivTemp / DataStream**: attribution + DOI; **API key required** (x-api-key, 2 req/s).
+- **RivTemp / DataStream**: per-dataset ODC-By / PDDL / OGL — all commercial-OK; attribution + DOI;
+  **API key required** (`x-api-key` via `WP_DATASTREAM_API_KEY`, 2 req/s).
 - **CIOOS**: CC-BY 4.0 / OGL-Canada / CC0 (per dataset).
+- **HydroSHEDS (HydroRIVERS / HydroBASINS)**: free scientific/educational/**commercial** use;
+  attribute *"Lehner & Grill (2013), HydroSHEDS."* **BasinMaker** NA routing product: MIT.
+- **DFO/CHS (IWLS tides)**, **NRCan CWFIS (wildfire)**, **ECCC FireWork/CAP/radar/HRDPA/lightning**:
+  OGL-Canada / ECCC End-use — commercial OK with attribution.
 
 ## Safety (residual harness)
 Runs from a single IP against live government servers. It is deliberately gentle: graduated
