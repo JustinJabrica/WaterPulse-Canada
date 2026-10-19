@@ -20,6 +20,7 @@ from app.models import Station, CurrentReading, HistoricalDailyMean, User
 from app.routes import stations, auth, collections, users, tags
 from app.routes.admin import router as admin_router
 from app.routes.readings import router as readings_router
+from app.routes.sources import router as sources_router
 from app.scheduler import start_scheduler, stop_scheduler
 
 # Configure logging
@@ -108,6 +109,7 @@ app.include_router(collections.router)
 app.include_router(users.router)
 app.include_router(tags.router)
 app.include_router(admin_router)
+app.include_router(sources_router)
 
 
 @app.get("/")

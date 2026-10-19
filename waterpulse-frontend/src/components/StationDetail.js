@@ -240,7 +240,16 @@ export default function StationDetail({ stationNumber, onClose, refreshButton = 
             {typeLabel && <> &middot; {typeLabel}</>}
             {provinceName && <> &middot; {provinceName}</>}
             {reading?.data_source && (
-              <> &middot; Source: {DATA_SOURCES[reading.data_source] || reading.data_source}</>
+              <>
+                {" "}&middot; Source:{" "}
+                <a
+                  href="/methodology#sources"
+                  className="text-[#1e6ba8] hover:underline"
+                  title="How WaterPulse sources, cites, and rates this data"
+                >
+                  {DATA_SOURCES[reading.data_source] || reading.data_source}
+                </a>
+              </>
             )}
           </p>
         </div>
@@ -318,6 +327,24 @@ export default function StationDetail({ stationNumber, onClose, refreshButton = 
                 <StatBlock label="Capacity" value={reading.pct_full} unit="%" decimals={1} />
               )}
             </div>
+
+            {/* Data-quality / provenance */}
+            {reading.level_symbol || reading.discharge_symbol ? (
+              <p className="text-xs text-amber-700 mb-3">
+                Quality flags:{" "}
+                {[reading.level_symbol, reading.discharge_symbol].filter(Boolean).join("; ")}{" "}
+                <a href="/methodology#reliability" className="text-[#1e6ba8] hover:underline">
+                  (what does this mean?)
+                </a>
+              </p>
+            ) : (
+              <p className="text-xs text-slate-400 mb-3">
+                Real-time readings are provisional and subject to revision.{" "}
+                <a href="/methodology#reliability" className="text-[#1e6ba8] hover:underline">
+                  How reliable is this?
+                </a>
+              </p>
+            )}
 
             {/* Percentile bars */}
             <PercentileBar

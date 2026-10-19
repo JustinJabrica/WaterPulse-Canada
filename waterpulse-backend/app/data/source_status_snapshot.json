@@ -1,0 +1,332 @@
+{
+  "basis": "DS-STD probe coverage (read-only, not live re-probed)",
+  "run_id": "probes-20261019T121356Z",
+  "snapshot_date": "2026-10-19",
+  "sources": {
+    "SRC-AB-511-RWIS": {
+      "data_age_minutes": null,
+      "health": "gated",
+      "reason": "http_400_bad_request"
+    },
+    "SRC-AB-RWQI": {
+      "data_age_minutes": null,
+      "health": "up",
+      "reason": "ok"
+    },
+    "SRC-AWC-METAR": {
+      "data_age_minutes": 19.9,
+      "health": "up",
+      "reason": "ok"
+    },
+    "SRC-BASINMAKER": {
+      "data_age_minutes": null,
+      "health": "up",
+      "reason": "ok"
+    },
+    "SRC-BC-ASWS": {
+      "data_age_minutes": null,
+      "health": "up",
+      "reason": "ok"
+    },
+    "SRC-BC-ENMODS": {
+      "data_age_minutes": null,
+      "health": "up",
+      "reason": "ok"
+    },
+    "SRC-BC-FWA": {
+      "data_age_minutes": null,
+      "health": "up",
+      "reason": "ok"
+    },
+    "SRC-BC-RFC": {
+      "data_age_minutes": null,
+      "health": "up",
+      "reason": "ok"
+    },
+    "SRC-CANSWE": {
+      "data_age_minutes": null,
+      "health": "up",
+      "reason": "ok"
+    },
+    "SRC-CHS-IWLS": {
+      "data_age_minutes": null,
+      "health": "up",
+      "reason": "ok"
+    },
+    "SRC-CIOOS": {
+      "data_age_minutes": null,
+      "health": "up",
+      "reason": "ok"
+    },
+    "SRC-CIS-ICE": {
+      "data_age_minutes": null,
+      "health": "up",
+      "reason": "ok"
+    },
+    "SRC-CITY-CALGARY": {
+      "data_age_minutes": 1399.6,
+      "health": "up",
+      "reason": "ok"
+    },
+    "SRC-CITY-EDMONTON": {
+      "data_age_minutes": 3406019.7,
+      "health": "up",
+      "reason": "ok"
+    },
+    "SRC-CITY-MONTREAL-RSMA": {
+      "data_age_minutes": null,
+      "health": "up",
+      "reason": "ok"
+    },
+    "SRC-CITY-TORONTO-BEACH": {
+      "data_age_minutes": null,
+      "health": "up",
+      "reason": "ok"
+    },
+    "SRC-CITY-WINNIPEG": {
+      "data_age_minutes": 2609228.7,
+      "health": "up",
+      "reason": "ok"
+    },
+    "SRC-CRID": {
+      "data_age_minutes": null,
+      "health": "up",
+      "reason": "ok"
+    },
+    "SRC-CWFIS-FIRE": {
+      "data_age_minutes": null,
+      "health": "up",
+      "reason": "ok"
+    },
+    "SRC-DATASTREAM-WQ": {
+      "data_age_minutes": null,
+      "health": "gated",
+      "reason": "http_401_unauthorized"
+    },
+    "SRC-ECCC-AQHI": {
+      "data_age_minutes": null,
+      "health": "up",
+      "reason": "ok"
+    },
+    "SRC-ECCC-CAP": {
+      "data_age_minutes": null,
+      "health": "up",
+      "reason": "ok"
+    },
+    "SRC-ECCC-CITYPAGE": {
+      "data_age_minutes": null,
+      "health": "up",
+      "reason": "ok"
+    },
+    "SRC-ECCC-CLIMATE": {
+      "data_age_minutes": null,
+      "health": "up",
+      "reason": "ok"
+    },
+    "SRC-ECCC-DATAMART": {
+      "data_age_minutes": 24.0,
+      "health": "up",
+      "reason": "ok"
+    },
+    "SRC-ECCC-FIREWORK": {
+      "data_age_minutes": null,
+      "health": "up",
+      "reason": "ok"
+    },
+    "SRC-ECCC-GEOMET": {
+      "data_age_minutes": 24.0,
+      "health": "up",
+      "reason": "ok"
+    },
+    "SRC-ECCC-GEOMET-DAILY": {
+      "data_age_minutes": null,
+      "health": "up",
+      "reason": "ok"
+    },
+    "SRC-ECCC-HRDPA": {
+      "data_age_minutes": null,
+      "health": "up",
+      "reason": "ok"
+    },
+    "SRC-ECCC-LIGHTNING": {
+      "data_age_minutes": null,
+      "health": "up",
+      "reason": "ok"
+    },
+    "SRC-ECCC-MARINE": {
+      "data_age_minutes": null,
+      "health": "up",
+      "reason": "ok"
+    },
+    "SRC-ECCC-OGC-HYDRO": {
+      "data_age_minutes": 49.1,
+      "health": "up",
+      "reason": "ok"
+    },
+    "SRC-ECCC-RADAR": {
+      "data_age_minutes": null,
+      "health": "up",
+      "reason": "ok"
+    },
+    "SRC-ECCC-SWOB": {
+      "data_age_minutes": 42292.5,
+      "health": "up",
+      "reason": "ok"
+    },
+    "SRC-ECCC-WATERPRED": {
+      "data_age_minutes": null,
+      "health": "up",
+      "reason": "ok"
+    },
+    "SRC-ECCC-WQMS": {
+      "data_age_minutes": null,
+      "health": "up",
+      "reason": "ok"
+    },
+    "SRC-GIN": {
+      "data_age_minutes": null,
+      "health": "up",
+      "reason": "ok"
+    },
+    "SRC-HYDAT": {
+      "data_age_minutes": null,
+      "health": "up",
+      "reason": "ok"
+    },
+    "SRC-HYDRORIVERS": {
+      "data_age_minutes": null,
+      "health": "up",
+      "reason": "ok"
+    },
+    "SRC-HYDROSHEDS": {
+      "data_age_minutes": null,
+      "health": "up",
+      "reason": "ok"
+    },
+    "SRC-LAKEICE": {
+      "data_age_minutes": null,
+      "health": "up",
+      "reason": "ok"
+    },
+    "SRC-MB-FLOODINFO": {
+      "data_age_minutes": 1199.0,
+      "health": "up",
+      "reason": "ok"
+    },
+    "SRC-MB-HFC": {
+      "data_age_minutes": null,
+      "health": "up",
+      "reason": "ok"
+    },
+    "SRC-MET-NORWAY": {
+      "data_age_minutes": null,
+      "health": "up",
+      "reason": "ok"
+    },
+    "SRC-NHN": {
+      "data_age_minutes": null,
+      "health": "up",
+      "reason": "ok"
+    },
+    "SRC-NL-ADRS": {
+      "data_age_minutes": 273.7,
+      "health": "up",
+      "reason": "ok"
+    },
+    "SRC-NRCAN-EGS-FLOOD": {
+      "data_age_minutes": null,
+      "health": "up",
+      "reason": "ok"
+    },
+    "SRC-NRCAN-FLOOD": {
+      "data_age_minutes": null,
+      "health": "up",
+      "reason": "ok"
+    },
+    "SRC-ON-CO": {
+      "data_age_minutes": null,
+      "health": "up",
+      "reason": "ok"
+    },
+    "SRC-ON-GRCA": {
+      "data_age_minutes": null,
+      "health": "up",
+      "reason": "ok"
+    },
+    "SRC-ON-KIWIS": {
+      "data_age_minutes": null,
+      "health": "up",
+      "reason": "ok"
+    },
+    "SRC-ON-OIH": {
+      "data_age_minutes": null,
+      "health": "up",
+      "reason": "ok"
+    },
+    "SRC-ON-PGMN": {
+      "data_age_minutes": null,
+      "health": "up",
+      "reason": "ok"
+    },
+    "SRC-ON-PWQMN": {
+      "data_age_minutes": null,
+      "health": "up",
+      "reason": "ok"
+    },
+    "SRC-OPEN-METEO": {
+      "data_age_minutes": null,
+      "health": "up",
+      "reason": "ok"
+    },
+    "SRC-OPEN-METEO-AQI": {
+      "data_age_minutes": null,
+      "health": "up",
+      "reason": "ok"
+    },
+    "SRC-OPEN-METEO-ARCHIVE": {
+      "data_age_minutes": null,
+      "health": "up",
+      "reason": "ok"
+    },
+    "SRC-QC-GRHQ": {
+      "data_age_minutes": null,
+      "health": "up",
+      "reason": "ok"
+    },
+    "SRC-QC-IQBP": {
+      "data_age_minutes": null,
+      "health": "up",
+      "reason": "ok"
+    },
+    "SRC-QC-RSESQ": {
+      "data_age_minutes": null,
+      "health": "up",
+      "reason": "ok"
+    },
+    "SRC-QC-VIGILANCE": {
+      "data_age_minutes": 29.0,
+      "health": "up",
+      "reason": "ok"
+    },
+    "SRC-RIVTEMP": {
+      "data_age_minutes": null,
+      "health": "gated",
+      "reason": "http_401_unauthorized"
+    },
+    "SRC-STA-GW": {
+      "data_age_minutes": null,
+      "health": "down",
+      "reason": "dns_error"
+    },
+    "SRC-WSC-BASINS": {
+      "data_age_minutes": null,
+      "health": "up",
+      "reason": "ok"
+    },
+    "SRC-YT-WATER": {
+      "data_age_minutes": null,
+      "health": "up",
+      "reason": "ok"
+    }
+  }
+}
