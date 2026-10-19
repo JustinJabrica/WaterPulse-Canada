@@ -49,8 +49,10 @@ Template (copy this shape in every source module)::
 from __future__ import annotations
 
 import asyncio
+import re
 import time
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Awaitable, Callable
 
 import httpx
@@ -244,3 +246,111 @@ def year_span(years) -> tuple[int | None, int | None, int | None]:
         return None, None, None
     lo, hi = min(ys), max(ys)
     return lo, hi, (hi - lo + 1)
+
+
+# ── Freshness helpers (data age of real-time sources) ───────────────
+# Used to populate TestResult.latest_obs_utc / data_age_minutes so source
+# prioritization can rank by how fresh each feed's latest reading is.
+_TS_RE = re.compile(r"\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(?::\d{2})?")
+
+
+def parse_ts(value) -> datetime | None:
+    """Parse an ISO-ish timestamp to a tz-aware UTC datetime. Accepts a trailing
+    'Z', numeric offsets, 'T' or space separators, and date-only strings; returns
+    None if unparseable. Naive timestamps are assumed UTC."""
+    if value is None:
+        return None
+    s0 = str(value).strip().strip('"')
+    if not s0:
+        return None
+    s = s0.replace("Z", "+00:00")
+    for cand in (s, s.replace(" ", "T", 1)):
+        try:
+            dt = datetime.fromisoformat(cand)
+            return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None \
+                else dt.astimezone(timezone.utc)
+        except ValueError:
+            continue
+    # Non-ISO government formats (e.g. NL ADRS "10/12/2026 7:55:21 AM"). North
+    # American m/d/Y is assumed; naive values are treated as UTC (a few hours'
+    # tz error is immaterial to a freshness-ranking signal).
+    for fmt in ("%m/%d/%Y %I:%M:%S %p", "%m/%d/%Y %H:%M:%S", "%m/%d/%Y %H:%M",
+                "%Y/%m/%d %H:%M:%S", "%d-%b-%Y %H:%M", "%m/%d/%Y"):
+        try:
+            return datetime.strptime(s0, fmt).replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+    m = _TS_RE.search(s)
+    if m:
+        try:
+            return datetime.fromisoformat(m.group(0).replace(" ", "T", 1)) \
+                .replace(tzinfo=timezone.utc)
+        except ValueError:
+            return None
+    return None
+
+
+def freshness_from(timestamps, now: datetime | None = None,
+                   future_tol_min: float = 180.0) -> tuple[str, float | None]:
+    """From an iterable of timestamp strings/datetimes, return
+    (latest_obs_utc_iso, data_age_minutes) for the most recent OBSERVATION — the
+    max timestamp no more than `future_tol_min` minutes ahead of now (so forecast
+    rows are ignored). Returns ("", None) if nothing parses."""
+    now = now or datetime.now(timezone.utc)
+    cutoff = now.timestamp() + future_tol_min * 60
+    best: datetime | None = None
+    for t in timestamps:
+        dt = t if isinstance(t, datetime) else parse_ts(t)
+        if dt is None:
+            continue
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        if dt.timestamp() > cutoff:
+            continue  # future/forecast timestamp — not an observation
+        if best is None or dt > best:
+            best = dt
+    if best is None:
+        return "", None
+    return best.isoformat(timespec="seconds"), round((now - best).total_seconds() / 60.0, 1)
+
+
+def latest_ts_from_csv(text: str, prefer_cols: tuple = (), delimiter: str = ",",
+                       max_scan: int = 4000) -> tuple[str, float | None]:
+    """Freshest observation timestamp in a CSV. Uses columns named in
+    `prefer_cols` (case-insensitive) when present, else scans every cell. Scans
+    at most `max_scan` rows (head+tail sample) so multi-million-row bundles stay
+    fast. Returns (latest_obs_utc_iso, data_age_minutes)."""
+    lines = [ln for ln in text.splitlines() if ln.strip()]
+    if len(lines) <= 1:
+        return "", None
+    header = [h.strip().strip('"') for h in lines[0].split(delimiter)]
+    hlow = [h.lower() for h in header]
+    idxs = [hlow.index(c.lower()) for c in prefer_cols if c.lower() in hlow]
+    rows = lines[1:]
+    if len(rows) > max_scan:
+        half = max_scan // 2
+        rows = rows[:half] + rows[-half:]
+    ts: list = []
+    for ln in rows:
+        cells = ln.split(delimiter)
+        if idxs:
+            ts.extend(cells[i].strip().strip('"') for i in idxs if i < len(cells))
+        else:
+            ts.extend(c.strip().strip('"') for c in cells)
+    return freshness_from(ts)
+
+
+def latest_ts_from_features(features, prefer_keys: tuple = ()) -> tuple[str, float | None]:
+    """Freshest observation timestamp across GeoJSON feature properties. Uses
+    `prefer_keys` when present, else scans all string property values. Returns
+    (latest_obs_utc_iso, data_age_minutes)."""
+    ts: list = []
+    for ft in features or []:
+        props = ft.get("properties", {}) if isinstance(ft, dict) else {}
+        if not isinstance(props, dict):
+            continue
+        if prefer_keys:
+            ts.extend(props[k] for k in prefer_keys if props.get(k) is not None)
+        else:
+            ts.extend(v for v in props.values() if isinstance(v, str))
+    return freshness_from(ts)

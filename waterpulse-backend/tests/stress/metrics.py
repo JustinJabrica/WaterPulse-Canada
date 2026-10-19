@@ -73,6 +73,11 @@ class TestResult:
     latest_year: int | None = None
     span_years: int | None = None
     latency_ms: float | None = None
+    # Data freshness (real-time sources): timestamp of the most recent OBSERVATION
+    # in the sample, and its age in minutes at probe time. None when not applicable
+    # (metadata / historical / grab-sample sources). Drives source prioritization.
+    latest_obs_utc: str = ""
+    data_age_minutes: float | None = None
     sample: str = ""           # trimmed raw response sample (evidence)
     notes: str = ""
     requests: list[RequestRecord] = field(default_factory=list)
@@ -84,13 +89,15 @@ TEST_COLUMNS = [
     "commercial_ok", "retrievable", "reason_category", "endpoint",
     "n_fields", "fields_found", "record_count", "station_count",
     "earliest_year", "latest_year", "span_years", "latency_ms",
+    "latest_obs_utc", "data_age_minutes",
     "n_requests", "reason_detail", "notes",
 ]
 
 COVERAGE_COLUMNS = [
     "category", "source_id", "label", "jurisdiction", "retrievable",
     "reason_category", "n_fields", "record_count", "station_count",
-    "earliest_year", "span_years", "latency_ms", "commercial_ok", "licence",
+    "earliest_year", "span_years", "latency_ms", "data_age_minutes",
+    "commercial_ok", "licence",
 ]
 
 
@@ -100,7 +107,8 @@ def _test_row(r: TestResult) -> list:
         r.commercial_ok, r.retrievable, r.reason_category, r.endpoint,
         len(r.fields_found), "|".join(r.fields_found), r.record_count,
         r.station_count, r.earliest_year, r.latest_year, r.span_years,
-        r.latency_ms, len(r.requests), r.reason_detail, r.notes,
+        r.latency_ms, r.latest_obs_utc, r.data_age_minutes,
+        len(r.requests), r.reason_detail, r.notes,
     ]
 
 
@@ -108,7 +116,8 @@ def _coverage_row(r: TestResult) -> list:
     return [
         r.category, r.source_id, r.label, r.jurisdiction, r.retrievable,
         r.reason_category, len(r.fields_found), r.record_count, r.station_count,
-        r.earliest_year, r.span_years, r.latency_ms, r.commercial_ok, r.licence,
+        r.earliest_year, r.span_years, r.latency_ms, r.data_age_minutes,
+        r.commercial_ok, r.licence,
     ]
 
 

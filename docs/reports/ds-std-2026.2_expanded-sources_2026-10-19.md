@@ -117,6 +117,27 @@ passing probe broke. Retrievable-by-category: current 30, historical 19, station
 precip 8, flood 7, waterquality 5, weather 5, groundwater 3, ice 3, snow 3, aqi 2, wildfire 2,
 tides 1, watertemp 1. (The `SRC-NHN-NLFLOW` residual probe is excluded from the sanctioned run.)
 
+### 3.8 Source freshness — the prioritization input
+
+To answer "which source should be primary?" with evidence rather than a blanket rule, the suite
+now records **`data_age_minutes`** (age of the most recent observation) and `latest_obs_utc` for
+every real-time source — in `tests.csv`, `coverage.csv`, and per-test JSON. Realtime GeoMet/OGC
+queries were switched to `sortby=-DATETIME` (newest-first) and the timestamp parser extended for
+non-ISO government formats (e.g. NL ADRS `m/d/Y h:mm AM`). Observed 2026-10-19:
+
+| source | data age | note |
+|---|---|---|
+| QC Vigilance (provincial) | **~7 min** | freshest — and QC is provincial-mandatory anyway |
+| ECCC GeoMet realtime | ~32 min | national floor |
+| ECCC Datamart (AB hourly) | ~42 min | national floor |
+| NL ADRS (provincial) | ~4 h | lags; tz assumed UTC |
+| MB FloodInfo (provincial) | ~18 h | forecast-centre cadence |
+
+Takeaway: "provincial primary" is right *where the provincial feed is actually fresher and
+reliable* (QC), but ECCC is often the freshest available and must stay the floor (NL/MB lag). This
+is why prioritization is a **measured, per-station** decision, not a global rule — see the
+companion **`ds-std-2026.2_resolver-priority-spec_2026-10-19.md`**.
+
 ## 4. Deep topology proof — "two points → corridor" is computable
 
 `tests/topology/hydrorivers_routing.py` loads the **North-America HydroRIVERS regional
@@ -183,6 +204,11 @@ variable set everywhere under a commercial licence.
    evidence base for the downstream recreation-index and trend/causal-analytics features.
 6. **Honour the source→surface matrix** in the app: `commercial_ok` drives ad placement, not source
    exclusion.
+7. **Prioritize sources per-station, by evidence** (not a global ECCC-vs-provincial rule): a
+   declarative resolver gates on coverage + surface licence, then ranks by authority → freshness
+   (`data_age_minutes`) → reliability, with a provincial-preferred tiebreak and QC/AB/SK overrides.
+   Design: `ds-std-2026.2_resolver-priority-spec_2026-10-19.md`. Warnings are a *union* layer
+   (show all authoritative alerts); readings are a *pick-the-freshest-reliable* layer.
 
 ## 7. How to reproduce
 

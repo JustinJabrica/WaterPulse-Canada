@@ -51,6 +51,8 @@ from tests.sources._base import (
     fields_from_csv,
     fields_from_json,
     http_probe,
+    latest_ts_from_csv,
+    latest_ts_from_features,
     register,
 )
 from tests.stress import classify
@@ -99,11 +101,13 @@ async def probe_mb_floodinfo(spec, ctx: ProbeContext) -> TestResult:
                 requests=recs,
             )
         f.record.records_parsed = len(rows)
+        latest_obs, age_min = latest_ts_from_csv(f.text)
         reason = classify.OK if rows else classify.OK_EMPTY
         return spec.result(
             retrievable=bool(rows), reason_category=reason, endpoint=url,
             fields_found=fields, record_count=len(rows),
-            latency_ms=f.record.latency_ms, sample=f.text[:800], requests=recs,
+            latency_ms=f.record.latency_ms, latest_obs_utc=latest_obs,
+            data_age_minutes=age_min, sample=f.text[:800], requests=recs,
             notes="AGOL forecast-centre feed; fields incl measuredFlow/"
                   "measuredLevel/forecastedFlow/floodStage/alert; units feet+cfs",
             extra={"units": "feet + cfs"},
@@ -219,11 +223,13 @@ async def probe_qc_vigilance(spec, ctx: ProbeContext) -> TestResult:
                 requests=recs,
             )
         f.record.records_parsed = n
+        latest_obs, age_min = latest_ts_from_features(feats)
         reason = classify.OK if n else classify.OK_EMPTY
         return spec.result(
             retrievable=bool(n), reason_category=reason, endpoint=url,
             fields_found=fields, record_count=n, station_count=n,
-            latency_ms=f.record.latency_ms, sample=f.text[:800], requests=recs,
+            latency_ms=f.record.latency_ms, latest_obs_utc=latest_obs,
+            data_age_minutes=age_min, sample=f.text[:800], requests=recs,
             notes="maxfeatures=50 sample; props incl dern_valeur_niv/"
                   "dern_valeur_deb (latest level/flow)",
             extra={"typename": QC_PARAMS["typename"]},
@@ -271,11 +277,13 @@ async def probe_nl_adrs(spec, ctx: ProbeContext) -> TestResult:
                 requests=recs,
             )
         f.record.records_parsed = len(rows)
+        latest_obs, age_min = latest_ts_from_csv(f.text, prefer_cols=("NST_DATI",))
         reason = classify.OK if rows else classify.OK_EMPTY
         return spec.result(
             retrievable=bool(rows), reason_category=reason, endpoint=url,
             fields_found=fields, record_count=len(rows), station_count=1,
-            latency_ms=f.record.latency_ms, sample=f.text[:800], requests=recs,
+            latency_ms=f.record.latency_ms, latest_obs_utc=latest_obs,
+            data_age_minutes=age_min, sample=f.text[:800], requests=recs,
             notes="single-station line file (02YL008); header "
                   "STAT_NUM,WSC_NUM,NST_DATI,WATER_TEMP,STAGE,FLOW,BATT_VOLTAGE "
                   "— WATER_TEMP present",

@@ -80,8 +80,9 @@ async def _main_async(args) -> int:
         mark = "OK " if r.retrievable else "XX "
         depth = f" depth={r.earliest_year}→{r.latest_year}" if r.earliest_year else ""
         nfields = f" fields={len(r.fields_found)}" if r.fields_found else ""
+        age = f" age={r.data_age_minutes:.0f}m" if r.data_age_minutes is not None else ""
         print(f"  [{i:>3}/{len(probes)}] {mark}{r.category:<11} {r.source_id:<22} "
-              f"{r.reason_category:<26}{nfields}{depth}")
+              f"{r.reason_category:<26}{nfields}{depth}{age}")
 
     elapsed = round(time.perf_counter() - t0, 1)
     ok = sum(1 for r in results if r.retrievable)

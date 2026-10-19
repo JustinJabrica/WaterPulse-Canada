@@ -33,6 +33,7 @@ from tests.sources._base import (
     ProbeContext,
     fields_from_json,
     http_probe,
+    latest_ts_from_features,
     register,
     year_span,
 )
@@ -162,7 +163,9 @@ for _prov in PROVINCES:
 # ── (b) CURRENT — one national realtime sample ──────────────────────
 async def _probe_current(spec, ctx: ProbeContext) -> TestResult:
     url = REALTIME_URL
-    params = {"f": "json", "limit": 10}
+    # sortby=-DATETIME → newest observations first (so the freshness sample is the
+    # latest reading, as the app would query, not an arbitrary 30-day-old slice).
+    params = {"f": "json", "limit": 10, "sortby": "-DATETIME"}
     recs = []
     async with build_client(timeout=ctx.request_timeout) as client:
         f = await http_probe(
@@ -187,11 +190,13 @@ async def _probe_current(spec, ctx: ProbeContext) -> TestResult:
         fields = fields_from_json(data)
         number_matched = _number_matched(data)
         f.record.records_parsed = len(feats)
+        latest_obs, age_min = latest_ts_from_features(feats, prefer_keys=("DATETIME", "DATETIME_LST"))
         reason = classify.OK if feats else classify.OK_EMPTY
         return spec.result(
             retrievable=bool(feats), reason_category=reason, endpoint=url,
             fields_found=fields, record_count=len(feats),
             station_count=_distinct_stations(feats), latency_ms=f.record.latency_ms,
+            latest_obs_utc=latest_obs, data_age_minutes=age_min,
             sample=f.text[:800], requests=recs,
             notes=f"national realtime observations sample (limit=10; "
                   f"numberMatched={number_matched})",

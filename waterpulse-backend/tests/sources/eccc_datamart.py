@@ -12,7 +12,9 @@ Policy: contact MSC only above ~86,400 req/day (~1 req/s); no cache-bypass heade
 """
 from __future__ import annotations
 
-from tests.sources._base import ProbeContext, fields_from_csv, http_probe, register
+from tests.sources._base import (
+    ProbeContext, fields_from_csv, http_probe, latest_ts_from_csv, register,
+)
 from tests.stress import classify
 from tests.stress.http_client import build_client
 from tests.stress.metrics import TestResult
@@ -44,11 +46,13 @@ async def _probe(spec, ctx: ProbeContext) -> TestResult:
         data = lines[1:] if len(lines) > 1 else []
         stations = {ln.split(",", 1)[0] for ln in data if "," in ln}
         f.record.records_parsed = len(data)
+        latest_obs, age_min = latest_ts_from_csv(f.text, prefer_cols=("Date",))
         reason = classify.OK if data else classify.OK_EMPTY
         return spec.result(
             retrievable=bool(data), reason_category=reason, endpoint=url,
             fields_found=fields, record_count=len(data), station_count=len(stations),
-            latency_ms=f.record.latency_ms, sample=f.text[:800], requests=recs,
+            latency_ms=f.record.latency_ms, latest_obs_utc=latest_obs,
+            data_age_minutes=age_min, sample=f.text[:800], requests=recs,
             notes="hourly bulk file = last ~2 days; daily variant = last ~30 days",
             extra={"expected_fields": EXPECTED_FIELDS},
         )
