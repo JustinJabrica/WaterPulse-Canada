@@ -33,6 +33,20 @@
 {$SITE_ADDRESS} {
     encode zstd gzip
 
+    # Baseline security headers for every response (frontend, API, tiles).
+    #   nosniff         — stop browsers MIME-sniffing JSON/tiles into HTML/JS
+    #   Referrer-Policy — don't leak full URLs (share tokens!) cross-origin
+    #   X-Frame-Options — no framing, blocks clickjacking
+    #   -Server         — don't advertise the proxy software/version
+    # A Content-Security-Policy is a tracked follow-up: MapLibre needs
+    # worker-src/blob: and the tile hosts allow-listed, which needs testing.
+    header {
+        X-Content-Type-Options nosniff
+        Referrer-Policy strict-origin-when-cross-origin
+        X-Frame-Options DENY
+        -Server
+    }
+
     # Self-hosted PMTiles basemap. Caddy's file_server supports HTTP Range
     # requests by default (required by the pmtiles JS protocol handler).
     # The tiles/ folder is bind-mounted read-only from the repo root.
