@@ -608,9 +608,9 @@ The frontend Dockerfile (`waterpulse-frontend/Dockerfile`) uses a three-stage bu
 
 | Stage | Base Image | Purpose |
 |-------|-----------|---------|
-| **deps** | `node:22-alpine` | Installs npm dependencies (`npm ci`) — cached unless package*.json changes |
-| **builder** | `node:22-alpine` | Copies source code and runs `npm run build` with the standalone output mode |
-| **runner** | `node:22-alpine` | Copies only the standalone server.js and static assets — final image ~100 MB |
+| **deps** | `node:26.13.1-alpine` | Installs npm dependencies (`npm ci`) — cached unless package*.json changes |
+| **builder** | `node:26.13.1-alpine` | Copies source code and runs `npm run build` with the standalone output mode |
+| **runner** | `node:26.13.1-alpine` | Copies only the standalone server.js and static assets, runs as the unprivileged `node` user — final image ~100 MB |
 
 Without the multi-stage build, the image would be ~500 MB because it would include the full `node_modules/` directory.
 

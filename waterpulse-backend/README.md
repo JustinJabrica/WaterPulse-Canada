@@ -39,7 +39,7 @@ The backend fetches data from multiple government APIs (ECCC federal + Alberta p
 
 ### Prerequisites
 
-- **Python 3.12** (3.13 also works; 3.14 is not yet supported due to missing pre-built wheels for pydantic-core)
+- **Python 3.15** (matches the Docker image; 3.14 also works — every dependency ships pre-built wheels for both, including on Windows, where `uvloop` is skipped automatically)
 - **PostgreSQL** installed and running locally
 - **Node.js** (for the Next.js frontend, covered separately)
 
@@ -58,15 +58,15 @@ If using pgAdmin, right-click "Databases" → "Create" → "Database" and name i
 cd waterpulse-backend
 ```
 
-Create and activate a virtual environment using Python 3.12:
+Create and activate a virtual environment using Python 3.15:
 
 ```bash
 # Windows
-py -3.12 -m venv venv
+py -3.15 -m venv venv
 venv\Scripts\activate
 
 # macOS / Linux
-python3.12 -m venv venv
+python3.15 -m venv venv
 source venv/bin/activate
 ```
 
@@ -169,7 +169,7 @@ If you prefer Docker over local setup, you can skip steps 1-4 above:
 | **Alembic** | Database migration tool. Tracks schema changes (add/remove/rename columns) and applies them incrementally. Works with SQLAlchemy models. | `alembic/` directory |
 | **httpx** | Async HTTP client library (similar to `requests` but supports `async`/`await`). Used to call external APIs (ECCC, Alberta, Open-Meteo). | All provider files, `weather.py` |
 | **APScheduler** | Background task scheduler. Runs readings refresh every 10 minutes and historical sync annually on Jan 1st, without needing a separate process like Celery. | `scheduler.py` |
-| **python-jose** | JWT (JSON Web Token) library for creating and verifying authentication tokens. | `auth.py` |
+| **PyJWT** | JWT (JSON Web Token) library for creating and verifying authentication tokens. Replaced `python-jose`, which has an unfixed algorithm-confusion vulnerability (CVE-2024-33663). Tokens are HMAC-only (`ALGORITHM` must be HS256/384/512) and must carry `exp` and `sub`. | `auth.py` |
 | **bcrypt** | Password hashing library. Securely stores passwords so even if the database is compromised, passwords can't be read. | `auth.py` |
 | **slowapi** | Rate limiting for FastAPI endpoints. Per-IP limits using in-memory storage (swap to Redis for multi-replica AWS deployments). | `limiter.py`, route decorators |
 | **uvicorn** | ASGI server that actually runs the FastAPI application. It's what listens on port 8000 and passes HTTP requests to FastAPI. | Command line |
