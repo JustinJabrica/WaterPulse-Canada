@@ -73,9 +73,10 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 # Next.js standalone binds to $HOSTNAME. Docker sets HOSTNAME to the
-# container ID, which made the server listen only on the container's own
-# interface — so the localhost wget healthcheck below always failed.
-# 0.0.0.0 makes it listen on every interface (Caddy + healthcheck).
+# container ID, which makes the server listen only on the container's own
+# network interface; 0.0.0.0 makes it listen on every IPv4 interface,
+# including loopback, so in-container probes (docker-compose healthcheck
+# on 127.0.0.1) and Caddy can both reach it.
 ENV HOSTNAME=0.0.0.0
 
 # Files are owned by the unprivileged "node" user (uid 1000) that ships with

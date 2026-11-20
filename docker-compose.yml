@@ -171,8 +171,11 @@ services:
     depends_on:
       - backend
     healthcheck:
-      # Alpine images don't have curl, so use wget instead
-      test: ["CMD-SHELL", "wget -q --spider http://localhost:3000/ || exit 1"]
+      # Alpine images don't have curl, so use wget instead. Use 127.0.0.1,
+      # not "localhost": in this image localhost resolves to ::1 (IPv6)
+      # first, while Next.js listens on 0.0.0.0 (IPv4) — the old check was
+      # refused and the container always reported "unhealthy".
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:3000/ || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
