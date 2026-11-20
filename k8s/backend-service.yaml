@@ -2,15 +2,15 @@
 # Service — FastAPI Backend
 # =============================================================================
 #
-# Exposes the backend Deployment within the cluster. The Ingress resource
+# Exposes the backend Deployment within the cluster. The Gateway API HTTPRoute (gateway.yaml)
 # routes /api/* traffic to this Service, which forwards it to the backend pod.
 #
 # Traffic flow:
-#   Browser → localhost:80 (Ingress) → backend-service:8000 → backend pod
+#   Browser → localhost:80 (Envoy Gateway) → backend-service:8000 → backend pod
 #
 # This Service is also used by the frontend's NEXT_PUBLIC_API_URL when
-# requests go through the Ingress (same origin), so the browser sends
-# them to localhost:80/api/* which the Ingress routes here.
+# requests go through the Gateway (same origin), so the browser sends
+# them to localhost:80/api/* which the HTTPRoute routes here.
 # =============================================================================
 
 apiVersion: v1

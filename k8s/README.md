@@ -23,10 +23,10 @@ This guide walks through deploying WaterPulse on a local **kind** (Kubernetes IN
 └──────────────────────┬──────────────────────────────────────┘
                        │ port 80
 ┌──────────────────────▼──────────────────────────────────────┐
-│  NGINX Ingress Controller                                    │
-│  (installed separately — replaces docker-compose Nginx)      │
+│  Envoy Gateway (Gateway API)                                 │
+│  (installed via Helm — replaces docker-compose Caddy)        │
 │                                                              │
-│  Routing rules:                                              │
+│  HTTPRoute rules (k8s/gateway.yaml):                         │
 │    /api/*        → backend-service:8000                      │
 │    /docs         → backend-service:8000                      │
 │    /openapi.json → backend-service:8000                      │
@@ -46,7 +46,7 @@ This guide walks through deploying WaterPulse on a local **kind** (Kubernetes IN
 └───────┬──────────┘
         │
 ┌───────▼──────────┐
-│  PostgreSQL 16   │
+│  PostgreSQL 19   │
 │  PVC: 2Gi        │
 └──────────────────┘
 ```
@@ -58,7 +58,7 @@ This guide walks through deploying WaterPulse on a local **kind** (Kubernetes IN
 | `db:` | Deployment + Service + PVC |
 | `backend:` | Deployment + Service |
 | `frontend:` | Deployment + Service |
-| `nginx:` | Ingress (handled by NGINX Ingress Controller) |
+| `caddy:` | Gateway + HTTPRoute (handled by Envoy Gateway) |
 | `.env` file | Secret + ConfigMap |
 | `pgdata` volume | PersistentVolumeClaim |
 | Docker internal DNS | Kubernetes DNS (Service names) |
@@ -84,11 +84,18 @@ choco install kubernetes-cli
 ```
 kubectl is the command-line tool for interacting with any Kubernetes cluster. It sends commands to the cluster's API server.
 
+### 4. Helm
+```bash
+choco install kubernetes-helm
+```
+Helm installs packaged applications ("charts") into a cluster. It's used here to install Envoy Gateway at a pinned version.
+
 ### Verify installations
 ```bash
 docker --version
-kind --version
+kind --version          # v0.33.0 or newer (kind-cluster.yaml pins the node image)
 kubectl version --client
+helm version
 ```
 
 ---
@@ -101,12 +108,11 @@ Run these commands in order from the project root:
 # 1. Create the kind cluster
 kind create cluster --name waterpulse --config k8s/kind-cluster.yaml
 
-# 2. Install the NGINX Ingress Controller (replaces our Nginx container)
-kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
-kubectl wait --namespace ingress-nginx \
-  --for=condition=ready pod \
-  --selector=app.kubernetes.io/component=controller \
-  --timeout=90s
+# 2. Install Envoy Gateway (pinned version; also installs the Gateway API CRDs)
+helm install eg oci://docker.io/envoyproxy/gateway-helm --version v1.10.0 \
+  -n envoy-gateway-system --create-namespace
+kubectl wait --timeout=5m -n envoy-gateway-system \
+  deployment/envoy-gateway --for=condition=Available
 
 # 3. Build Docker images and load them into kind
 docker build -t waterpulse-backend:latest ./waterpulse-backend
@@ -144,10 +150,11 @@ kubectl apply -f k8s/backend-deployment.yaml
 kubectl apply -f k8s/backend-service.yaml
 kubectl apply -f k8s/frontend-deployment.yaml
 kubectl apply -f k8s/frontend-service.yaml
-kubectl apply -f k8s/ingress.yaml
+kubectl apply -f k8s/gateway.yaml
 kubectl apply -f k8s/job-historical-sync.yaml
 
 # 6. Verify everything is running
+kubectl get gateway,httproute -n waterpulse    # Gateway PROGRAMMED=True
 kubectl get all -n waterpulse
 
 # 7. (Optional) Run the historical sync now instead of waiting for Jan 1st
@@ -169,8 +176,7 @@ kind create cluster --name waterpulse --config k8s/kind-cluster.yaml
 
 **What this does:**
 - Creates a single Docker container that runs a full Kubernetes cluster inside it
-- The `kind-cluster.yaml` config maps host port 80 into the cluster (so `http://localhost` reaches the Ingress Controller)
-- Labels the node as `ingress-ready=true` (the Ingress Controller only runs on nodes with this label)
+- The `kind-cluster.yaml` config pins the node image (Kubernetes v1.37.0) and maps host port 80 to node port 30080, where the Envoy Gateway NodePort Service listens (so `http://localhost` reaches the Gateway)
 
 **Verify:**
 ```bash
@@ -178,24 +184,25 @@ kubectl cluster-info --context kind-waterpulse
 kubectl get nodes
 ```
 
-### Step 2: Install the NGINX Ingress Controller
+### Step 2: Install Envoy Gateway
 
 ```bash
-kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
+helm install eg oci://docker.io/envoyproxy/gateway-helm --version v1.10.0 \
+  -n envoy-gateway-system --create-namespace
 ```
 
 **What this does:**
-- Installs the NGINX Ingress Controller into the `ingress-nginx` namespace
-- The controller watches for Ingress resources and configures Nginx routing automatically
-- This replaces the standalone Nginx container from docker-compose
-- The kind-specific version is configured to use `hostPort` (mapping to the node's port 80)
+- Installs the Gateway API CRDs (`GatewayClass`, `Gateway`, `HTTPRoute`, …) and the Envoy Gateway controller into the `envoy-gateway-system` namespace
+- The controller watches `Gateway`/`HTTPRoute` resources and runs an Envoy proxy configured from them
+- This replaces the Caddy container from docker-compose
+- `k8s/gateway.yaml` makes the proxy's Service a NodePort pinned to 30080, which `kind-cluster.yaml` maps to `localhost:80`
+
+**Why not ingress-nginx any more?** The ingress-nginx project was retired in March 2026 and no longer receives releases or security fixes, and these docs previously installed it from an unpinned `main` URL. Gateway API is the maintained successor to Ingress, and the Helm chart version is pinned so every install is reproducible.
 
 **Wait for it to be ready:**
 ```bash
-kubectl wait --namespace ingress-nginx \
-  --for=condition=ready pod \
-  --selector=app.kubernetes.io/component=controller \
-  --timeout=90s
+kubectl wait --timeout=5m -n envoy-gateway-system \
+  deployment/envoy-gateway --for=condition=Available
 ```
 
 ### Step 3: Build and load images
@@ -206,7 +213,7 @@ docker build -t waterpulse-frontend:latest --build-arg NEXT_PUBLIC_API_URL=http:
 ```
 
 **Why `NEXT_PUBLIC_API_URL=http://localhost`?**
-Next.js bakes `NEXT_PUBLIC_*` variables into the JavaScript at build time. With the Ingress, both the frontend and API are served from `localhost:80`, so the browser sends API requests to `http://localhost/api/*`, which the Ingress routes to the backend.
+Next.js bakes `NEXT_PUBLIC_*` variables into the JavaScript at build time. With the Gateway, both the frontend and API are served from `localhost:80`, so the browser sends API requests to `http://localhost/api/*`, which the HTTPRoute sends to the backend.
 
 ```bash
 kind load docker-image waterpulse-backend:latest --name waterpulse
@@ -276,8 +283,9 @@ kubectl apply -f k8s/backend-service.yaml
 kubectl apply -f k8s/frontend-deployment.yaml
 kubectl apply -f k8s/frontend-service.yaml
 
-# Ingress — routes external traffic to the services
-kubectl apply -f k8s/ingress.yaml
+# Gateway API — EnvoyProxy (kind NodePort), Gateway and HTTPRoute that route
+# external traffic to the services
+kubectl apply -f k8s/gateway.yaml
 
 # CronJob — annual historical sync (runs Jan 1st at 03:00 UTC)
 kubectl apply -f k8s/job-historical-sync.yaml
@@ -317,19 +325,19 @@ kubectl get all -n waterpulse
 
 | File | Kind | Purpose |
 |------|------|---------|
-| `kind-cluster.yaml` | kind config | Maps host port 80 into the cluster node, labels it for Ingress |
+| `kind-cluster.yaml` | kind config | Pins the node image (Kubernetes v1.37.0) and maps host port 80 to the Gateway's NodePort 30080 |
 | `namespace.yaml` | Namespace | Isolates all WaterPulse resources in their own namespace |
 | `secrets.yaml` | Secret | POSTGRES_PASSWORD and SECRET_KEY (base64-encoded, gitignored) |
 | `secrets.yaml.example` | Secret | Template with placeholder values (safe to commit) |
 | `configmap.yaml` | ConfigMap | Non-secret env vars: DB host, API URLs, scheduler interval, etc. |
 | `db-pvc.yaml` | PersistentVolumeClaim | 2Gi storage for PostgreSQL data (survives pod restarts) |
-| `db-deployment.yaml` | Deployment | PostgreSQL 16-alpine with Recreate strategy and health probes |
+| `db-deployment.yaml` | Deployment | PostgreSQL 19.0-alpine with Recreate strategy and health probes |
 | `db-service.yaml` | Service (ClusterIP) | Internal DNS name `db-service` on port 5432 |
 | `backend-deployment.yaml` | Deployment | FastAPI with envFrom ConfigMap, Secret refs, startup/readiness/liveness probes |
 | `backend-service.yaml` | Service (ClusterIP) | Internal DNS name `backend-service` on port 8000 |
 | `frontend-deployment.yaml` | Deployment | Next.js standalone server with health probes |
 | `frontend-service.yaml` | Service (ClusterIP) | Internal DNS name `frontend-service` on port 3000 |
-| `ingress.yaml` | Ingress | Path-based routing: `/api/*` → backend, `/*` → frontend |
+| `gateway.yaml` | GatewayClass, EnvoyProxy, Gateway, HTTPRoute | Path-based routing: `/api/*`, `/docs`, `/openapi.json` → backend (30 min timeout), `/*` → frontend |
 | `job-historical-sync.yaml` | CronJob | Annual historical data sync (Jan 1st 03:00 UTC), can also be triggered manually |
 
 ---
@@ -402,7 +410,7 @@ kind delete cluster --name waterpulse
 
 ### Historical Sync (CronJob)
 
-The historical data sync runs automatically every January 1st at 03:00 UTC via a Kubernetes CronJob. It rebuilds the percentile table with the latest 5 years of data for all of Canada. This replaces the APScheduler job that runs inside the backend — the CronJob approach is more reliable for long-running tasks because the pod has no health probes or Ingress timeouts.
+The historical data sync runs automatically every January 1st at 03:00 UTC via a Kubernetes CronJob. It rebuilds the percentile table with the latest 5 years of data for all of Canada. This replaces the APScheduler job that runs inside the backend — the CronJob approach is more reliable for long-running tasks because the pod has no health probes or Gateway timeouts.
 
 **Apply the CronJob (one-time setup):**
 ```bash
@@ -530,15 +538,20 @@ kind load docker-image waterpulse-backend:latest --name waterpulse
 ```
 
 ### `http://localhost` not responding
-1. Check the Ingress Controller is running:
+1. Check Envoy Gateway and its proxy are running:
    ```bash
-   kubectl get pods -n ingress-nginx
+   kubectl get pods -n envoy-gateway-system
    ```
-2. Check the Ingress resource is applied:
+2. Check the Gateway is programmed and the route is accepted:
    ```bash
-   kubectl get ingress -n waterpulse
+   kubectl get gateway,httproute -n waterpulse
+   kubectl describe httproute waterpulse -n waterpulse   # look at Status.Parents
    ```
-3. Check if port 80 is already in use (e.g., by IIS or another web server):
+3. Check the proxy Service is the pinned NodePort (30080):
+   ```bash
+   kubectl get svc -n envoy-gateway-system
+   ```
+4. Check if port 80 is already in use (e.g., by IIS or another web server):
    ```bash
    netstat -ano | findstr :80   # Windows
 lsof -i :80                 # macOS / Linux
@@ -573,10 +586,10 @@ kubectl rollout restart deployment/db -n waterpulse
 kubectl rollout restart deployment/backend -n waterpulse
 ```
 
-### Ingress returning 404 or 503
+### Gateway returning 404 or 503
 ```bash
-# Check Ingress Controller logs
-kubectl logs -n ingress-nginx -l app.kubernetes.io/component=controller
+# Check the Envoy Gateway controller logs (route/config errors)
+kubectl logs -n envoy-gateway-system deployment/envoy-gateway
 
 # Verify backend and frontend services have endpoints
 kubectl get endpoints -n waterpulse
@@ -612,13 +625,13 @@ For production, use a managed database service instead of running PostgreSQL in 
 
 Update `DATABASE_URL` and `DATABASE_URL_SYNC` in the ConfigMap (or use Secrets) to point to the managed instance. Remove `db-deployment.yaml`, `db-service.yaml`, and `db-pvc.yaml`.
 
-### 4. Ingress
-Cloud providers automatically provision load balancers when they see an Ingress resource:
-- **AWS**: ALB Ingress Controller → Application Load Balancer
-- **GCP**: GKE Ingress → Google Cloud Load Balancer
-- **Azure**: Application Gateway Ingress Controller
+### 4. Gateway
+On a cloud cluster, drop the `EnvoyProxy` NodePort override from `gateway.yaml` (and the Gateway's `infrastructure.parametersRef`): Envoy Gateway's default Service type is `LoadBalancer`, which the cloud provider fulfils automatically. Managed Gateway API implementations are an alternative:
+- **AWS**: AWS Gateway API Controller (VPC Lattice) or Envoy Gateway behind an NLB
+- **GCP**: GKE Gateway controller → Google Cloud Load Balancer
+- **Azure**: Application Gateway for Containers
 
-Add a `host:` field to the Ingress rules for your domain, and configure TLS with cert-manager or your cloud provider's certificate service.
+Add `hostnames:` to the HTTPRoute for your domain, and an HTTPS listener with a certificate (cert-manager or your cloud provider's certificate service).
 
 ### 5. Storage
 The PersistentVolumeClaim automatically provisions cloud storage:

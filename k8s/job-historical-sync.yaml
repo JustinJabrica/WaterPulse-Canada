@@ -9,7 +9,7 @@
 # Why a CronJob instead of running inside the API server?
 #   - No health probes — the pod won't be killed for being "unresponsive"
 #     during a long-running sync (the backend's liveness probe would kill it)
-#   - No Ingress timeouts — talks directly to the database
+#   - No Gateway timeouts — talks directly to the database
 #   - Dedicated resources — gets its own pod with its own CPU/memory limits,
 #     so it doesn't compete with the API server
 #   - Kubernetes-native scheduling — visible via `kubectl get cronjobs`,

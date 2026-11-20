@@ -10,9 +10,9 @@
 #   BUILD time. This means the API URL cannot be changed by setting an env var
 #   on the pod — it was already hardcoded into the JS files during `npm run build`.
 #
-#   For the K8s setup with an Ingress:
-#   - The browser accesses everything through localhost:80 (the Ingress)
-#   - The Ingress routes /api/* to the backend and /* to the frontend
+#   For the K8s setup with a Gateway:
+#   - The browser accesses everything through localhost:80 (the Gateway)
+#   - The HTTPRoute routes /api/* to the backend and /* to the frontend
 #   - So NEXT_PUBLIC_API_URL should be "" (empty) or "http://localhost"
 #   - This must be set at Docker build time via --build-arg
 #
@@ -68,7 +68,7 @@ spec:
           # HOSTNAME=0.0.0.0 tells the Next.js server to listen on all
           # network interfaces, not just localhost. Without this, the
           # server would only be reachable from within the container
-          # itself — other pods (and the Ingress) couldn't connect to it.
+          # itself — other pods (and the Gateway) couldn't connect to it.
           env:
             - name: NODE_ENV
               value: "production"
@@ -82,7 +82,7 @@ spec:
           # standalone starts quickly, but we allow up to 60 seconds
           # (6 failures x 10s) just in case.
           #
-          # readinessProbe: Is the pod ready for traffic? The Ingress only
+          # readinessProbe: Is the pod ready for traffic? The Gateway only
           # sends requests to pods that pass their readiness check.
           #
           # livenessProbe: Is the pod still alive? If this fails repeatedly,

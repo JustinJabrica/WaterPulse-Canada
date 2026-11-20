@@ -45,7 +45,7 @@ data:
 
   # ── CORS ───────────────────────────────────────────────────────────────
   # The backend checks this URL to allow cross-origin requests from the
-  # frontend. In K8s with Ingress, both frontend and backend are behind
+  # frontend. In K8s with the Gateway, both frontend and backend are behind
   # the same origin (localhost:80), so CORS is less of an issue — but the
   # backend still needs this for its allow_origins list.
   FRONTEND_URL: "http://localhost:3000"

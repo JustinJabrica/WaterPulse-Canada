@@ -1,0 +1,126 @@
+# =============================================================================
+# Gateway API routing — Envoy Gateway (replaces ingress.yaml / ingress-nginx)
+# =============================================================================
+#
+# Why the change: the ingress-nginx project was retired by Kubernetes SIG
+# Network in March 2026 and no longer receives releases or security patches
+# (https://kubernetes.io/blog/2025/11/11/ingress-nginx-retirement/). Gateway
+# API is the maintained successor to Ingress; Envoy Gateway is a conformant,
+# CNCF-hosted implementation.
+#
+# Routing (same as the old Ingress and the docker-compose Caddyfile):
+#   /api/*, /docs, /docs/*, /openapi.json  → backend-service:8000
+#   /*                                     → frontend-service:3000
+# The old Ingress used a regex with rewrite-target /$1, which captured the
+# whole path — an identity rewrite — so no URL rewriting is needed here.
+#
+# Prerequisites (see k8s/README.md, Step 2): Envoy Gateway installed via its
+# pinned Helm chart, which also installs the Gateway API CRDs:
+#   helm install eg oci://docker.io/envoyproxy/gateway-helm --version v1.10.0 \
+#     -n envoy-gateway-system --create-namespace
+#
+# Apply order matters only for the EnvoyProxy: create it before the Gateway
+# that references it (kubectl apply -f k8s/gateway.yaml does that, top-down).
+# =============================================================================
+
+# ── GatewayClass ──────────────────────────────────────────────────────────────
+# Cluster-scoped: tells Kubernetes that Gateways of class "eg" are implemented
+# by the Envoy Gateway controller installed by the Helm chart.
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: eg
+spec:
+  controllerName: gateway.envoyproxy.io/gatewayclass-controller
+---
+# ── EnvoyProxy (kind-specific data-plane settings) ────────────────────────────
+# Envoy Gateway exposes each Gateway through a Service of type LoadBalancer by
+# default, which kind cannot satisfy without an extra load-balancer add-on.
+# Instead, use a NodePort Service with a fixed node port that kind-cluster.yaml
+# maps to localhost:80 (extraPortMappings). Service ports are merged by "port"
+# (strategic merge), so this entry pins the nodePort of the port-80 listener.
+# Adding an HTTPS listener later means pinning e.g. 443 → 30443 here and
+# adding the matching extraPortMapping.
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: EnvoyProxy
+metadata:
+  name: kind-nodeport
+  namespace: waterpulse
+spec:
+  provider:
+    type: Kubernetes
+    kubernetes:
+      envoyService:
+        type: NodePort
+        patch:
+          type: StrategicMerge
+          value:
+            spec:
+              ports:
+                - port: 80
+                  nodePort: 30080
+---
+# ── Gateway ───────────────────────────────────────────────────────────────────
+# The listener (the "front door"). One plain-HTTP listener on port 80, which
+# kind maps to http://localhost. spec.infrastructure.parametersRef attaches
+# the EnvoyProxy above to this Gateway only.
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: waterpulse-gateway
+  namespace: waterpulse
+spec:
+  gatewayClassName: eg
+  infrastructure:
+    parametersRef:
+      group: gateway.envoyproxy.io
+      kind: EnvoyProxy
+      name: kind-nodeport
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 80
+      allowedRoutes:
+        namespaces:
+          from: Same
+---
+# ── HTTPRoute ─────────────────────────────────────────────────────────────────
+# Path-based routing to the two Services. Gateway API picks the most specific
+# match, so the backend paths win over the "/" catch-all regardless of order.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: waterpulse
+  namespace: waterpulse
+spec:
+  parentRefs:
+    - name: waterpulse-gateway
+  rules:
+    # FastAPI: REST API + Swagger UI + OpenAPI spec
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api
+        - path:
+            type: PathPrefix
+            value: /docs
+        - path:
+            type: Exact
+            value: /openapi.json
+      backendRefs:
+        - name: backend-service
+          port: 8000
+      # Long-running admin sync endpoints (historical sync can take many
+      # minutes) — matches the old Ingress proxy-read/send timeouts and the
+      # Caddyfile's 30m read/write timeouts. Envoy's default is 15s.
+      timeouts:
+        request: "1800s"
+
+    # Next.js frontend: everything else
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: frontend-service
+          port: 3000
