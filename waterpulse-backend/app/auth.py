@@ -2,8 +2,8 @@ import secrets
 from datetime import datetime, timedelta, timezone
 
 import bcrypt
+import jwt
 from fastapi import Depends, HTTPException, Request, Response, status
-from jose import JWTError, jwt
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -75,13 +75,17 @@ async def get_current_user(
         return None
 
     try:
+        # algorithms= is an explicit allow-list (never trust the token's own
+        # "alg" header), and "require" rejects tokens missing exp/sub instead
+        # of letting int(None) raise a TypeError that surfaced as a 500.
         payload = jwt.decode(
-            token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
+            token,
+            settings.SECRET_KEY,
+            algorithms=[settings.ALGORITHM],
+            options={"require": ["exp", "sub"]},
         )
-        user_id = int(payload.get("sub"))
-        if user_id is None:
-            return None
-    except (JWTError, ValueError):
+        user_id = int(payload["sub"])
+    except (jwt.PyJWTError, ValueError, TypeError):
         return None
 
     result = await db.execute(select(User).where(User.id == user_id))

@@ -71,7 +71,7 @@ services:
       retries: 5
 
   # ── FastAPI Backend ─────────────────────────────────────────────────────────
-  # Python 3.12 running the FastAPI application server (uvicorn).
+  # Python 3.15 running the FastAPI application server (uvicorn).
   #
   # Startup sequence (handled by entrypoint.sh):
   #   1. Wait for PostgreSQL to accept queries (psycopg2 retry loop using
@@ -126,7 +126,9 @@ services:
     # Remove this in production (use docker-compose.prod.yml override).
     command: ["--reload"]
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8000/ || exit 1"]
+      # python:*-slim ships no curl (the old curl check always failed), so
+      # probe with the interpreter that is guaranteed to be present.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/', timeout=5)"]
       interval: 30s
       timeout: 10s
       retries: 3
