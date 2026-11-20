@@ -15,6 +15,14 @@ import { PROVINCE_BOUNDS, PROVINCE_COLOURS, PROVINCE_LABEL_ANCHORS, PROVINCES } 
 // Register the pmtiles:// protocol handler once at module scope so React
 // StrictMode's double-invocation in dev doesn't attempt to register twice.
 if (typeof window !== "undefined" && !window.__pmtilesRegistered) {
+  // maplibre-gl v6 derives its worker URL from its own import.meta.url, which
+  // the bundler rewrites to a non-http URL — the default then resolves to the
+  // page itself and the worker fails to load ("non-JavaScript MIME type").
+  // A static new URL(..., import.meta.url) is emitted by the bundler as a
+  // hashed static asset, so this always points at the matching worker build.
+  maplibregl.setWorkerUrl(
+    new URL("maplibre-gl/dist/maplibre-gl-worker.mjs", import.meta.url).href
+  );
   maplibregl.addProtocol("pmtiles", new Protocol().tile);
   window.__pmtilesRegistered = true;
 }
