@@ -68,6 +68,11 @@
             }
             header_up Host {host}
             header_up X-Real-IP {remote_host}
+            # Overwrite (never append to) any client-sent X-Forwarded-For:
+            # the backend trusts this header for per-client rate limiting.
+            # {client_ip} is the TCP peer, or the real client once
+            # trusted_proxies is configured (e.g. for a Cloudflare tunnel).
+            header_up X-Forwarded-For {client_ip}
         }
     }
 
@@ -75,6 +80,11 @@
         reverse_proxy frontend:3000 {
             header_up Host {host}
             header_up X-Real-IP {remote_host}
+            # Overwrite (never append to) any client-sent X-Forwarded-For:
+            # the backend trusts this header for per-client rate limiting.
+            # {client_ip} is the TCP peer, or the real client once
+            # trusted_proxies is configured (e.g. for a Cloudflare tunnel).
+            header_up X-Forwarded-For {client_ip}
         }
     }
 }

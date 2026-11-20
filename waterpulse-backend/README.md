@@ -125,7 +125,7 @@ curl -X POST -H "Authorization: Bearer $ADMIN_API_TOKEN" http://localhost:8000/a
 curl -X POST -H "Authorization: Bearer $ADMIN_API_TOKEN" http://localhost:8000/api/admin/refresh-readings
 ```
 
-Or use the interactive docs at `http://localhost:8000/docs` (the **Authorize** button accepts the token). Under docker-compose, use `http://localhost/api/...` (via Caddy) or your `BACKEND_HOST_PORT`.
+Or use the interactive docs at `http://localhost:8000/docs`: the **Authorize** button (scheme `AdminApiToken`) accepts the token. Do this in a browser that is *not* logged in to WaterPulse — with a session cookie present, CSRF protection also requires an `X-CSRF-Token` header that Swagger doesn't send, so the call returns 403. Under docker-compose, use `http://localhost/api/...` (via Caddy) or your `BACKEND_HOST_PORT`.
 
 ### 6. Verify Everything
 

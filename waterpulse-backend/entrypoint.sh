@@ -81,9 +81,14 @@ alembic upgrade head
 # peer is always the proxy. Trusting its X-Forwarded-For makes
 # request.client.host the real visitor IP — without this, slowapi's per-IP
 # limits (login 10/min, register 3/hour, ...) were one bucket shared by every
-# visitor. Caddy discards client-supplied X-Forwarded-For and sets its own, so
-# a browser cannot spoof it; the backend's host port is loopback-only.
-# FORWARDED_ALLOW_IPS can narrow the trusted range (comma-separated IPs/CIDRs).
+# visitor.
+#
+# Spoofing: with "*" uvicorn trusts the LEFTMOST X-Forwarded-For entry. That
+# is safe only when the proxy overwrites the header — the Caddyfile sets
+# `header_up X-Forwarded-For {client_ip}`, and the backend's host port is
+# loopback-only. Proxies that append (Envoy in k8s) must instead set
+# FORWARDED_ALLOW_IPS to their own address range (comma-separated IPs/CIDRs;
+# k8s/configmap.yaml does), so uvicorn walks the header right-to-left.
 echo "Starting uvicorn..."
 exec uvicorn app.main:app --host 0.0.0.0 --port 8000 \
     --proxy-headers --forwarded-allow-ips="${FORWARDED_ALLOW_IPS:-*}" "$@"

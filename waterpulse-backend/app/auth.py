@@ -3,7 +3,8 @@ from datetime import datetime, timedelta, timezone
 
 import bcrypt
 import jwt
-from fastapi import Depends, HTTPException, Request, Response, status
+from fastapi import Depends, HTTPException, Request, Response, Security, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -116,23 +117,36 @@ async def require_superuser(
     return user
 
 
-def _has_valid_admin_token(request: Request) -> bool:
-    """True when the request carries `Authorization: Bearer <ADMIN_API_TOKEN>`.
+# Declares the bearer scheme in OpenAPI so Swagger UI (/docs) shows an
+# "Authorize" button for the admin endpoints. auto_error=False: a missing
+# token is not an error by itself — superusers may use their session instead.
+admin_bearer = HTTPBearer(
+    auto_error=False,
+    scheme_name="AdminApiToken",
+    description="ADMIN_API_TOKEN from .env (scripts, cron, Swagger). "
+    "Superusers can use their login session instead.",
+)
+
+
+def _token_matches(presented: str | None) -> bool:
+    """Constant-time check of a presented token against ADMIN_API_TOKEN.
 
     Always False when ADMIN_API_TOKEN is unset, so token auth is opt-in.
-    Uses a constant-time comparison so the token can't be guessed by timing.
     """
     expected = settings.ADMIN_API_TOKEN
-    if not expected:
-        return False
-    scheme, _, presented = request.headers.get("authorization", "").partition(" ")
-    if scheme.lower() != "bearer" or not presented:
+    if not expected or not presented:
         return False
     return secrets.compare_digest(presented.encode("utf-8"), expected.encode("utf-8"))
 
 
+def _has_valid_admin_token(request: Request) -> bool:
+    """True when the request carries `Authorization: Bearer <ADMIN_API_TOKEN>`."""
+    scheme, _, presented = request.headers.get("authorization", "").partition(" ")
+    return scheme.lower() == "bearer" and _token_matches(presented)
+
+
 async def require_admin(
-    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Security(admin_bearer),
     user: User | None = Depends(get_current_user),
 ) -> User | None:
     """
@@ -143,7 +157,7 @@ async def require_admin(
     presenting the ADMIN_API_TOKEN bearer token. Returns the User for
     cookie callers and None for token callers.
     """
-    if _has_valid_admin_token(request):
+    if credentials is not None and _token_matches(credentials.credentials):
         return None
     if user is None:
         raise HTTPException(

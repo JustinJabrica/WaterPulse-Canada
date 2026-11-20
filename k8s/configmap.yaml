@@ -65,3 +65,11 @@ data:
   # The scheduler also runs a historical sync annually on January 1st at
   # 03:00 UTC — that's configured in code, not here.
   READINGS_REFRESH_INTERVAL_MINUTES: "10"
+
+  # Which proxies uvicorn trusts for X-Forwarded-For (per-client rate limits).
+  # Envoy APPENDS the peer address to any client-supplied X-Forwarded-For, so
+  # trusting "*" (the compose default, safe behind Caddy) would let a client
+  # pick its own rate-limit bucket. Trust only the pod network instead: kind's
+  # default podSubnet. uvicorn then walks the header right-to-left and uses
+  # the first address outside it. Change this if your cluster's pod CIDR differs.
+  FORWARDED_ALLOW_IPS: "10.244.0.0/16"

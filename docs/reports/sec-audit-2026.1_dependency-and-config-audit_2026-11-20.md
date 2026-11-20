@@ -17,7 +17,7 @@
 | Reverse proxy | Caddy 2.11.4 (floating `2-alpine` tag, 5 months stale) — CVE-2026-55458 | Caddy 2.11.9 (pinned) |
 | k8s ingress | ingress-nginx — **retired Mar 2026, no security fixes**; installed from unpinned `main` | Envoy Gateway v1.10.0 (Gateway API, pinned Helm chart) |
 | Runtimes | Python 3.12.15 · Node 22.23.3 · PostgreSQL 16.15 | Python 3.15.2 · Node 26.13.1 (Active LTS) · PostgreSQL 19.0 |
-| Config | 1 critical, 2 high, 4 medium findings (§4) | All fixed; 2 residual items documented (§8) |
+| Config | 12 findings — 1 critical, 1 high, 5 medium, 5 low (§4) | All fixed or documented; residual items in §9 |
 
 The most serious problem found was **not a library CVE**: the deployed `SECRET_KEY` was the
 public placeholder from `.env.example`, which made every JWT forgeable (C-1). At the time of the
@@ -77,14 +77,14 @@ deployed?
 | C-1 | `.env` `SECRET_KEY` equal to the committed `.env.example` placeholder, so anyone could forge an access token for any user id. `docs/cloudflare-tunnel.md` describes exposing the stack publicly. The bare-metal `waterpulse-backend/.env` also used a placeholder. | **Critical** | Both keys rotated (`token_urlsafe(64)`). `config.py` validator refuses startup if `SECRET_KEY` is a known placeholder or < 32 chars, and if `ALGORITHM` ∉ {HS256, HS384, HS512}. |
 | C-2 | `POST /api/admin/sync-stations`, `sync-historical`, `refresh-readings` had **no authentication** (only 5/min) and were CSRF-exempt: anyone could trigger Canada-wide upstream fetches, abusing provider APIs and risking IP bans. | **High** | New `require_admin` dependency: superuser session (CSRF enforced) **or** `Authorization: Bearer ADMIN_API_TOKEN` (constant-time compare; disabled when unset). `/api/admin/` removed from CSRF exemptions. `GET /api/admin/status` stays public for the home page. |
 | C-3 | `POST /api/readings/refresh` was public with no rate limit; with no filter it refreshed every station in Canada. | Medium | 20/min per client; ≤ 50 `station_numbers`; a no-filter refresh is admin-only. UI callers unaffected. |
-| C-4 | slowapi keyed on `request.client.host`, which is **Caddy's IP**: register (3/h) and login (10/min) limits were one global bucket, so one client could lock everyone out. | Medium | uvicorn `--proxy-headers --forwarded-allow-ips` (Caddy discards client-sent `X-Forwarded-For`). **Residual behind Cloudflare tunnels** (§8). |
+| C-4 | slowapi keyed on `request.client.host`, which is **Caddy's IP**: register (3/h) and login (10/min) limits were one global bucket, so one client could lock everyone out. | Medium | uvicorn `--proxy-headers --forwarded-allow-ips`. uvicorn trusts the *leftmost* `X-Forwarded-For` entry when allowing `*`, so the Caddyfile now overwrites the header (`header_up X-Forwarded-For {client_ip}`); a spoofed `X-Forwarded-For: 203.0.113.9` sent through Caddy is ignored (verified). k8s trusts only the pod CIDR (`FORWARDED_ALLOW_IPS`), because Envoy appends rather than replaces. **Residual behind Cloudflare tunnels and kind NodePort SNAT** (§9). |
 | C-5 | Postgres 5432 and backend 8000 published on all host interfaces (LAN-reachable). | Medium | Bound to `127.0.0.1`, host ports configurable (`POSTGRES_HOST_PORT`, `BACKEND_HOST_PORT`). |
 | C-6 | Backend and frontend containers ran as root. | Medium | Backend uid 10001 `app`; frontend `node` (uid 1000). |
 | C-7 | Floating image tags (`caddy:2-alpine`, `postgres:16-alpine`, `node:22-alpine`, `python:3.12-slim`) silently went stale. | Medium | Exact tags pinned + Dependabot for npm, pip, Docker, compose and k8s (`.github/dependabot.yml`). |
 | C-8 | A token without `sub` raised an unhandled `TypeError` (500). | Low | PyJWT `options={"require": ["exp","sub"]}`, broader exception handling → 401. |
 | C-9 | CSRF double-submit compared tokens with `!=` (not constant-time). | Low | `secrets.compare_digest`. |
 | C-10 | `POSTGRES_PASSWORD` was 8 characters while the port was LAN-exposed. | Low | Rotated to a 43-character value when PG19 initialised. |
-| C-11 | `Limiter(default_limits=["60/minute"])` is **not enforced** on undecorated endpoints (slowapi needs `SlowAPIMiddleware`, which isn't installed); the README claimed it was. | Low | Docs corrected; enabling a global limit is a follow-up (§8). |
+| C-11 | `Limiter(default_limits=["60/minute"])` is **not enforced** on undecorated endpoints (slowapi needs `SlowAPIMiddleware`, which isn't installed); the README claimed it was. | Low | Docs corrected; enabling a global limit is a follow-up (§9). |
 | C-12 | Healthchecks were broken. Backend: `curl` is absent from `python:*-slim`. Frontend: `localhost` resolves to `::1` but Next listens on IPv4. | Low (ops) | Backend probes with Python; frontend probes `127.0.0.1` with `HOSTNAME=0.0.0.0`. Both report `healthy`. |
 
 ## 5. Checked — not affected
@@ -125,10 +125,11 @@ deployed?
 | CSRF | logout with no / wrong header → 403; matching header → 200 |
 | Admin | guest → 401; logged-in non-admin → 403; wrong bearer → 401; correct bearer → 200 (PE province refresh) |
 | Public refresh | no filter → 400; 51 stations → 422; 21st call within a minute → 429 |
-| Client-IP keying | uvicorn logs show the client (`172.18.0.1`), not Caddy (`172.18.0.5`) |
+| Client-IP keying | uvicorn logs show the client (`172.18.0.1`), not Caddy (`172.18.0.5`); requests carrying a spoofed `X-Forwarded-For: 203.0.113.9` are still attributed to `172.18.0.1` |
 | `/map` in headless Chromium (Edge 157, WebGL2) | Basemap, province overlay and station clusters render; no worker or console errors besides the expected guest 401 on `/api/auth/me` |
 | k8s manifests | `kubeconform -strict`: 14 resources valid (Gateway API + EnvoyProxy CRD schemas). `envoyService.type/patch` confirmed in the v1.10.0 CRD. **Not run on a live kind cluster** (kind/helm not installed). |
 | `dependabot.yml` | Valid against the published schema |
+| Swagger | `/openapi.json` declares the `AdminApiToken` bearer scheme on the admin endpoints; Basic scheme or wrong token → 401 |
 
 ## 8. Not upgraded to the absolute latest, and why
 
@@ -141,10 +142,13 @@ deployed?
 
 ## 9. Residual risk and follow-ups
 
-1. **Tunnel client IPs.** Behind a Cloudflare quick tunnel every visitor reaches Caddy from the
-   same peer, so per-IP limits are shared. Fix when needed: Caddy
+1. **Shared client IPs (tunnel, k8s).** Behind a Cloudflare quick tunnel every visitor reaches
+   Caddy from the same peer, so per-IP limits are shared. Fix when needed: Caddy
    `servers { trusted_proxies …; client_ip_headers CF-Connecting-IP X-Forwarded-For }`,
-   enabled only for tunnel mode. Documented in `docs/cloudflare-tunnel.md`.
+   enabled only for tunnel mode (the `{client_ip}` placeholder then carries the real client).
+   Documented in `docs/cloudflare-tunnel.md`. On kind, NodePort traffic is SNAT-ed to the node
+   address, so buckets are shared there too. Spoofing is still not possible (pod-CIDR trust);
+   per-client limits would need `externalTrafficPolicy: Local` or a real load balancer.
 2. **Content-Security-Policy.** Not yet set; needs MapLibre `worker-src` and the tile/glyph hosts
    allow-listed and tested.
 3. **Global rate limit.** Install `SlowAPIMiddleware` with a generous default once normal
