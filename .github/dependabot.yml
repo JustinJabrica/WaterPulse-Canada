@@ -1,0 +1,66 @@
+# =============================================================================
+# Dependabot — keep pinned dependencies and images current
+# =============================================================================
+# Every dependency in this repo is pinned to an exact version (requirements.txt,
+# package-lock.json, image tags such as caddy:2.11.9-alpine). Pinning makes
+# builds reproducible but means nothing updates by itself — the floating
+# caddy:2-alpine tag, for example, once sat five months stale with a known
+# CVE. Dependabot opens a PR whenever a newer version is published.
+#
+# Also enable, in the GitHub repo: Settings → Code security → "Dependabot
+# alerts" and "Dependabot security updates" (alerts + out-of-schedule
+# security PRs are repository settings, not part of this file).
+# =============================================================================
+version: 2
+
+updates:
+  # ── Frontend (Next.js) ──────────────────────────────────────────────────────
+  - package-ecosystem: npm
+    directory: /waterpulse-frontend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    groups:
+      # One PR for all non-breaking bumps instead of one per package.
+      npm-minor-and-patch:
+        update-types: [minor, patch]
+    ignore:
+      # eslint-config-next's plugins (eslint-plugin-react, -import, -jsx-a11y)
+      # declare peer support only up to ESLint 9. Remove this once they
+      # support ESLint 10+.
+      - dependency-name: eslint
+        update-types: [version-update:semver-major]
+
+  # ── Backend (FastAPI) ───────────────────────────────────────────────────────
+  - package-ecosystem: pip
+    directory: /waterpulse-backend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    groups:
+      pip-minor-and-patch:
+        update-types: [minor, patch]
+
+  # ── Container base images (Dockerfiles + k8s manifests) ────────────────────
+  - package-ecosystem: docker
+    directories:
+      - /waterpulse-backend
+      - /waterpulse-frontend
+      - /k8s
+    schedule:
+      interval: weekly
+    ignore:
+      # A PostgreSQL major upgrade needs a dump/restore into a new volume
+      # (see waterpulse-backend/README.md, "Upgrading PostgreSQL") — do it
+      # deliberately, not via an auto-generated PR.
+      - dependency-name: postgres
+        update-types: [version-update:semver-major]
+
+  # ── docker-compose images (postgres, caddy) ─────────────────────────────────
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: weekly
+    ignore:
+      - dependency-name: postgres
+        update-types: [version-update:semver-major]
