@@ -1846,7 +1846,7 @@ alembic upgrade head
 
 ### Dockerfile
 
-The backend Dockerfile (`waterpulse-backend/Dockerfile`) uses Python 3.12-slim (Debian-based, not Alpine) because the `asyncpg` and `psycopg2-binary` packages include C extensions that compile more reliably on Debian.
+The backend Dockerfile (`waterpulse-backend/Dockerfile`) uses `python:3.15.2-slim` (Debian-based, not Alpine). Every compiled dependency (`asyncpg`, `psycopg2-binary`, `pydantic-core`, `uvloop`, …) ships a prebuilt manylinux wheel for Python 3.15, so the image needs no compiler. The container runs as an unprivileged `app` user (uid 10001), not root.
 
 **Layer caching strategy:** `requirements.txt` is copied and installed before the source code. This means changing a Python file does NOT re-trigger `pip install` — only changes to `requirements.txt` invalidate the dependency layer, making rebuilds fast.
 
@@ -1888,15 +1888,40 @@ docker-compose exec backend alembic current
 
 ### Connecting to the Database
 
-Port 5432 is exposed in the development docker-compose for local tools (pgAdmin, DBeaver, etc.):
+The development docker-compose publishes PostgreSQL on **127.0.0.1 only** (never the LAN) for local tools (pgAdmin, DBeaver, etc.). The host port is `POSTGRES_HOST_PORT` from `.env` (default 5432; set e.g. 5434 if a native PostgreSQL install already holds 5432):
 
 ```bash
 # Open a psql shell inside the container
 docker-compose exec db psql -U waterpulse -d waterpulse
 
 # Or connect from your host machine
-psql -h localhost -p 5432 -U waterpulse -d waterpulse
+psql -h 127.0.0.1 -p 5432 -U waterpulse -d waterpulse   # use your POSTGRES_HOST_PORT
 ```
+
+### Upgrading PostgreSQL
+
+A **major** version upgrade (e.g. 16 → 19) cannot reuse the old data directory: the files are version-specific, and the official 18+ images also moved the data to a version subdirectory (`PGDATA=/var/lib/postgresql/<major>/docker`) with the volume mounted at `/var/lib/postgresql`. The safe path is dump → fresh volume → restore. Dump *inside* the container and copy the file out — piping `pg_dump` through a shell redirect (`>`) can corrupt the binary dump (TTY allocation, PowerShell re-encoding).
+
+```bash
+# 1. On the OLD version: dump to a file inside the container, copy it out, check it
+docker compose up -d db
+docker compose exec -T db pg_dump -U waterpulse -Fc -f /tmp/old.dump waterpulse
+docker compose cp db:/tmp/old.dump backups/old.dump          # backups/ is gitignored
+docker compose exec -T db pg_restore -l /tmp/old.dump | grep -c "TABLE DATA"
+#    (record per-table row counts too, to compare after the restore)
+
+# 2. Point docker-compose.yml at the new image AND a NEW named volume mounted at
+#    /var/lib/postgresql (keep the old volume as a rollback point), then:
+docker compose stop db && docker compose rm -f db
+docker compose up -d db
+
+# 3. Restore from a file path (not stdin), compare row counts, start the stack
+docker compose cp backups/old.dump db:/tmp/old.dump
+docker compose exec -T db pg_restore --no-owner --exit-on-error -U waterpulse -d waterpulse /tmp/old.dump
+docker compose up -d                      # alembic upgrade head is a no-op
+```
+
+> On Git Bash for Windows, prefix the `exec`/`cp` commands with `MSYS_NO_PATHCONV=1` so `/tmp/...` is not rewritten to a Windows path. `POSTGRES_PASSWORD` is only read when a volume is first initialised — a fresh volume is the moment to rotate it. The dump contains user emails and password hashes: keep it out of git and delete it once you no longer need the rollback.
 
 ### .dockerignore
 

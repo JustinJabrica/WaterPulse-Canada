@@ -469,6 +469,29 @@ kubectl get jobs -n waterpulse -l job-name=historical-sync
 kubectl describe cronjob historical-sync -n waterpulse
 ```
 
+### Upgrading PostgreSQL
+
+`db-deployment.yaml` runs `postgres:19.0-alpine` with the PVC mounted at `/var/lib/postgresql` (subPath `postgresql`), which is the layout PostgreSQL 18+ images require. A cluster created by the older 16 manifest lives under subPath `pgdata` on the same PVC and is left untouched. Major versions cannot share a data directory, so move the data with a dump/restore:
+
+```bash
+# 1. BEFORE applying the new manifest — dump from the running PG16 pod
+kubectl exec -n waterpulse deploy/db -- pg_dump -U waterpulse -Fc -f /tmp/old.dump waterpulse
+kubectl cp waterpulse/$(kubectl get pod -n waterpulse -l app=db -o name | cut -d/ -f2):/tmp/old.dump ./old.dump
+pg_restore -l ./old.dump | grep -c "TABLE DATA"     # sanity check
+
+# 2. Apply the PG19 manifest (Recreate strategy: old pod stops, new one initialises)
+kubectl apply -f k8s/db-deployment.yaml
+kubectl rollout status deployment/db -n waterpulse
+
+# 3. Restore into the new cluster from a file, then restart the backend
+POD=$(kubectl get pod -n waterpulse -l app=db -o name | cut -d/ -f2)
+kubectl cp ./old.dump waterpulse/$POD:/tmp/old.dump
+kubectl exec -n waterpulse $POD -- pg_restore --no-owner --exit-on-error -U waterpulse -d waterpulse /tmp/old.dump
+kubectl rollout restart deployment/backend -n waterpulse
+```
+
+The dump contains user emails and password hashes — delete `old.dump` once the upgrade is verified.
+
 ### Delete database data (equivalent to `docker-compose down -v`)
 ```bash
 kubectl delete pvc db-pvc -n waterpulse

@@ -1,5 +1,5 @@
 # =============================================================================
-# Deployment — PostgreSQL 16 Database
+# Deployment — PostgreSQL 19 Database
 # =============================================================================
 #
 # A Deployment tells Kubernetes "run this container image with these settings
@@ -55,7 +55,7 @@ spec:
     spec:
       containers:
         - name: postgres
-          image: postgres:16-alpine
+          image: postgres:19.0-alpine
 
           ports:
             # Declare that this container listens on port 5432.
@@ -82,12 +82,16 @@ spec:
           # ── Volume mount ───────────────────────────────────────────────
           volumeMounts:
             - name: pgdata
-              mountPath: /var/lib/postgresql/data
-              # subPath prevents PostgreSQL from seeing the lost+found directory
-              # that exists at the root of ext4-formatted volumes. Without this,
-              # PostgreSQL would refuse to initialise because the directory is
-              # "not empty."
-              subPath: pgdata
+              # PostgreSQL 18+ images keep data in a version-specific
+              # subdirectory (PGDATA=/var/lib/postgresql/19/docker) and expect
+              # the volume at the parent /var/lib/postgresql. Mounting the old
+              # .../data path makes the container refuse to start.
+              mountPath: /var/lib/postgresql
+              # subPath "postgresql" is a fresh directory on the PVC, so a
+              # PG16 cluster left under the old "pgdata" subPath is untouched
+              # (rollback point). Moving data across a major version is a
+              # dump/restore — see k8s/README.md, "Upgrading PostgreSQL".
+              subPath: postgresql
 
           # ── Health checks ──────────────────────────────────────────────
           # readinessProbe: Is the pod ready to receive traffic?

@@ -44,13 +44,13 @@
 
 services:
   # ── PostgreSQL Database ─────────────────────────────────────────────────────
-  # Official PostgreSQL 16 on Alpine Linux (lightweight).
+  # Official PostgreSQL 19 on Alpine Linux (lightweight).
   # Credentials are set via environment variables — POSTGRES_PASSWORD comes
   # from the .env file (interpolated by Docker Compose at runtime).
   # The healthcheck ensures the backend waits until PostgreSQL is truly ready
   # to accept queries, not just TCP connections.
   db:
-    image: postgres:16-alpine
+    image: postgres:19.0-alpine
     env_file:
       - .env     # Loads POSTGRES_PASSWORD for database initialisation
     environment:
@@ -63,7 +63,14 @@ services:
       # install already holds that port (set it in .env).
       - "127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432"
     volumes:
-      - pgdata:/var/lib/postgresql/data   # Persist data across restarts
+      # PostgreSQL 18+ images keep data in a version-specific subdirectory
+      # (PGDATA=/var/lib/postgresql/19/docker) and expect the volume at the
+      # parent /var/lib/postgresql — mounting the old .../data path makes the
+      # container refuse to start. A major-version upgrade is a dump/restore
+      # into a fresh volume (see waterpulse-backend/README.md, "Upgrading
+      # PostgreSQL"); the previous PG16 volume "pgdata" is kept untouched
+      # for rollback until you delete it yourself.
+      - pgdata19:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U waterpulse"]
       interval: 5s
@@ -206,11 +213,15 @@ services:
       - backend
 
 # ── Named Volumes ─────────────────────────────────────────────────────────────
-# pgdata:       Persists PostgreSQL data files across container restarts.
+# pgdata19:     Persists PostgreSQL 19 data files across container restarts.
+# pgdata:       Legacy PostgreSQL 16 volume — no longer mounted; kept only as a
+#               rollback point after the 16 -> 19 upgrade. Remove with
+#               `docker volume rm waterpulse-canada_pgdata` once satisfied.
 # caddy-data:   Persists ACME certs and keys across restarts.
 # caddy-config: Persists Caddy runtime config.
 # WARNING: docker-compose down -v will DELETE all volumes (DB data + TLS certs).
 volumes:
+  pgdata19:
   pgdata:
   caddy-data:
   caddy-config:
