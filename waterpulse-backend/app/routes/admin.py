@@ -3,6 +3,11 @@ Admin routes for triggering background data sync tasks.
 
 These endpoints handle station sync, historical data download,
 manual readings refresh, and system status information.
+
+The POST endpoints trigger expensive upstream fetches across every provider,
+so they require an admin: a logged-in superuser, or a script presenting
+`Authorization: Bearer <ADMIN_API_TOKEN>` (see app.auth.require_admin).
+GET /status stays public — the home page shows its counts.
 """
 
 from datetime import datetime
@@ -11,6 +16,7 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
 
+from app.auth import require_admin
 from app.database import get_db
 from app.limiter import limiter
 from app.models.station import Station
@@ -23,7 +29,7 @@ from app.services.readings_refresh import refresh_current_readings
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 
-@router.post("/sync-stations")
+@router.post("/sync-stations", dependencies=[Depends(require_admin)])
 @limiter.limit("5/minute")
 async def trigger_station_sync(request: Request, db: AsyncSession = Depends(get_db)):
     """
@@ -34,7 +40,7 @@ async def trigger_station_sync(request: Request, db: AsyncSession = Depends(get_
     return {"status": "complete", **summary}
 
 
-@router.post("/sync-historical")
+@router.post("/sync-historical", dependencies=[Depends(require_admin)])
 @limiter.limit("5/minute")
 async def trigger_historical_sync(request: Request):
     """
@@ -46,7 +52,7 @@ async def trigger_historical_sync(request: Request):
     return {"status": "complete", **summary}
 
 
-@router.post("/refresh-readings")
+@router.post("/refresh-readings", dependencies=[Depends(require_admin)])
 @limiter.limit("5/minute")
 async def trigger_readings_refresh(
     request: Request,

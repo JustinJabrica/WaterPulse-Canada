@@ -6,18 +6,19 @@
 # "node" is actually a Docker container. This config file tells kind how to
 # set up that cluster.
 #
-# Usage:
+# Usage (kind v0.33.0+):
 #   kind create cluster --name waterpulse --config k8s/kind-cluster.yaml
 #
 # What this does:
 #   1. Creates a single-node cluster (one container acting as both the
-#      control plane and a worker node)
-#   2. Maps ports 80 and 443 from your host machine into the cluster node
-#      so the NGINX Ingress Controller can receive browser traffic
-#   3. Labels the node so the Ingress Controller knows to run on it
+#      control plane and a worker node), on a pinned Kubernetes version
+#   2. Maps host port 80 to node port 30080, where the Envoy Gateway
+#      NodePort Service listens (pinned in k8s/gateway.yaml)
 #
-# After creation, install the NGINX Ingress Controller:
-#   kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
+# After creation, install Envoy Gateway (pinned version; also installs the
+# Gateway API CRDs):
+#   helm install eg oci://docker.io/envoyproxy/gateway-helm --version v1.10.0 \
+#     -n envoy-gateway-system --create-namespace
 #
 # Then the app is accessible at http://localhost (port 80), just like
 # docker-compose.
@@ -29,32 +30,24 @@ apiVersion: kind.x-k8s.io/v1alpha4
 nodes:
   - role: control-plane
 
-    # ── Node labels ──────────────────────────────────────────────────────
-    # The NGINX Ingress Controller for kind looks for nodes with the label
-    # "ingress-ready=true" to know where to schedule its pods. Without
-    # this label, the Ingress Controller won't start and no traffic will
-    # reach your services.
-    kubeadmConfigPatches:
-      - |
-        kind: InitConfiguration
-        nodeRegistration:
-          kubeletExtraArgs:
-            node-labels: "ingress-ready=true"
+    # ── Node image ───────────────────────────────────────────────────────
+    # Pinned by digest to the default image of kind v0.33.0 (Kubernetes
+    # v1.37.0) so every machine gets the same cluster version. Bump it from
+    # the kind release notes when upgrading kind.
+    image: kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5
 
     # ── Port mappings ────────────────────────────────────────────────────
     # These map ports on your host machine (localhost) to ports inside the
-    # kind Docker container. This is how browser requests at localhost:80
-    # reach the NGINX Ingress Controller running inside the cluster.
+    # kind Docker container. Envoy Gateway's Service is a NodePort pinned to
+    # 30080 (see the EnvoyProxy resource in k8s/gateway.yaml), so browser
+    # requests to http://localhost:80 land on it.
     #
-    # Without these mappings, you'd need to use `kubectl port-forward`
+    # Without this mapping, you'd need to use `kubectl port-forward`
     # every time you want to access the app.
     #
-    # containerPort 80  → HTTP traffic  (Ingress Controller listens here)
-    # containerPort 443 → HTTPS traffic (for future TLS support)
+    # For HTTPS later: add a 443 listener to the Gateway, pin it to 30443 in
+    # the EnvoyProxy, and add  containerPort: 30443 → hostPort: 443  here.
     extraPortMappings:
-      - containerPort: 80
+      - containerPort: 30080
         hostPort: 80
-        protocol: TCP
-      - containerPort: 443
-        hostPort: 443
         protocol: TCP

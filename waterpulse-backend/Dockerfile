@@ -2,9 +2,9 @@
 # WaterPulse Backend — Dockerfile
 # =============================================================================
 #
-# Builds the FastAPI backend image with Python 3.12.
+# Builds the FastAPI backend image with Python 3.15.
 #
-# Uses python:3.12-slim (Debian-based) rather than Alpine because the
+# Uses python:3.15-slim (Debian-based) rather than Alpine because the
 # asyncpg and psycopg2-binary packages include C extensions that compile
 # more reliably on Debian. The slim variant keeps the image small (~150 MB).
 #
@@ -24,7 +24,11 @@
 # Run:     docker run -p 8000:8000 --env-file .env waterpulse-backend
 # =============================================================================
 
-FROM python:3.12-slim
+FROM python:3.15.2-slim
+
+# No .pyc files in the image or the dev bind mounts; unbuffered logs.
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
@@ -49,6 +53,14 @@ COPY app/ app/
 # regardless of the file permissions on the Windows host.
 COPY entrypoint.sh .
 RUN chmod +x entrypoint.sh
+
+# ── Run as an unprivileged user ──────────────────────────────────────────────
+# The app needs no root privileges (port 8000 is unprivileged). A fixed UID
+# keeps file ownership predictable across rebuilds and k8s securityContext.
+RUN groupadd --system --gid 10001 app \
+ && useradd --system --uid 10001 --gid app --no-create-home app \
+ && chown -R app:app /app
+USER app
 
 # ── Container configuration ──────────────────────────────────────────────────
 # Port 8000 is the default uvicorn port used in entrypoint.sh.

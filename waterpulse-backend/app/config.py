@@ -11,8 +11,23 @@ Usage in any service file:
     url = f"{settings.ECCC_BASE_URL}{settings.ECCC_STATIONS_PATH}"
 """
 
-from pydantic_settings import BaseSettings
 from functools import lru_cache
+
+from pydantic import field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Placeholder SECRET_KEY values shipped in the committed templates
+# (.env.example, waterpulse-backend/.env.example, k8s/secrets.yaml.example).
+# They are public, so a deployment still using one has forgeable JWTs.
+_PLACEHOLDER_SECRET_KEYS = frozenset({
+    "change-me-to-a-random-secret-key",
+    "your-secret-key-here",
+    "change-me",
+})
+_MIN_SECRET_KEY_LENGTH = 32
+# HMAC only: the app signs and verifies with one shared secret. Restricting
+# the allow-list also closes off algorithm-confusion attacks (CVE-2024-33663).
+_ALLOWED_JWT_ALGORITHMS = frozenset({"HS256", "HS384", "HS512"})
 
 
 class Settings(BaseSettings):
@@ -28,6 +43,9 @@ class Settings(BaseSettings):
     SECRET_KEY: str
     ALGORITHM: str
     ACCESS_TOKEN_EXPIRE_MINUTES: int
+    # Optional bearer token for the POST /api/admin/* sync endpoints (scripts,
+    # curl). Empty/unset disables token auth — only superusers can call them.
+    ADMIN_API_TOKEN: str | None = None
     FRONTEND_URL: str
     ECCC_BASE_URL: str
     ECCC_DATAMART_BASE_URL: str
@@ -149,10 +167,43 @@ class Settings(BaseSettings):
         )
         return f"{self.ALBERTA_BASE_URL}{path}"
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        case_sensitive = True
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=True,
+    )
+
+    @field_validator("SECRET_KEY")
+    @classmethod
+    def _secret_key_must_be_strong(cls, v: str) -> str:
+        if v in _PLACEHOLDER_SECRET_KEYS or len(v) < _MIN_SECRET_KEY_LENGTH:
+            raise ValueError(
+                "SECRET_KEY is a template placeholder or shorter than "
+                f"{_MIN_SECRET_KEY_LENGTH} characters. Generate one with: "
+                'python -c "import secrets; print(secrets.token_urlsafe(64))"'
+            )
+        return v
+
+    @field_validator("ALGORITHM")
+    @classmethod
+    def _algorithm_must_be_hmac(cls, v: str) -> str:
+        if v not in _ALLOWED_JWT_ALGORITHMS:
+            raise ValueError(
+                f"ALGORITHM must be one of {sorted(_ALLOWED_JWT_ALGORITHMS)}"
+            )
+        return v
+
+    @field_validator("ADMIN_API_TOKEN")
+    @classmethod
+    def _admin_token_blank_or_strong(cls, v: str | None) -> str | None:
+        if not v:
+            return None  # blank in .env means "disabled"
+        if len(v) < _MIN_SECRET_KEY_LENGTH:
+            raise ValueError(
+                f"ADMIN_API_TOKEN must be blank or at least "
+                f"{_MIN_SECRET_KEY_LENGTH} characters"
+            )
+        return v
 
 
 @lru_cache()

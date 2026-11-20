@@ -39,7 +39,7 @@ The backend fetches data from multiple government APIs (ECCC federal + Alberta p
 
 ### Prerequisites
 
-- **Python 3.12** (3.13 also works; 3.14 is not yet supported due to missing pre-built wheels for pydantic-core)
+- **Python 3.15** (matches the Docker image; 3.14 also works — every dependency ships pre-built wheels for both, including on Windows, where `uvloop` is skipped automatically)
 - **PostgreSQL** installed and running locally
 - **Node.js** (for the Next.js frontend, covered separately)
 
@@ -58,15 +58,15 @@ If using pgAdmin, right-click "Databases" → "Create" → "Database" and name i
 cd waterpulse-backend
 ```
 
-Create and activate a virtual environment using Python 3.12:
+Create and activate a virtual environment using Python 3.15:
 
 ```bash
 # Windows
-py -3.12 -m venv venv
+py -3.15 -m venv venv
 venv\Scripts\activate
 
 # macOS / Linux
-python3.12 -m venv venv
+python3.15 -m venv venv
 source venv/bin/activate
 ```
 
@@ -112,20 +112,20 @@ The API will be available at `http://localhost:8000`. Interactive API docs are a
 
 ### 5. Populate the Database
 
-The database starts empty. Populate it by calling the admin endpoints in this order:
+The database starts empty. Populate it by calling the admin endpoints in this order. They require an admin: either set `ADMIN_API_TOKEN` in `.env` and send it as a bearer token (below), or log in as a superuser.
 
 ```bash
 # Step 1 — Sync stations (~8,500 stations from all providers, takes ~15 seconds)
-curl -X POST http://localhost:8000/api/admin/sync-stations
+curl -X POST -H "Authorization: Bearer $ADMIN_API_TOKEN" http://localhost:8000/api/admin/sync-stations
 
 # Step 2 — Sync historical data (daily means for percentile calculations, takes hours for all of Canada)
-curl -X POST http://localhost:8000/api/admin/sync-historical
+curl -X POST -H "Authorization: Bearer $ADMIN_API_TOKEN" http://localhost:8000/api/admin/sync-historical
 
 # Step 3 — Refresh current readings (latest data + ratings, takes ~30 seconds)
-curl -X POST http://localhost:8000/api/admin/refresh-readings
+curl -X POST -H "Authorization: Bearer $ADMIN_API_TOKEN" http://localhost:8000/api/admin/refresh-readings
 ```
 
-Or use the interactive docs at `http://localhost:8000/docs` to trigger these.
+Or use the interactive docs at `http://localhost:8000/docs`: the **Authorize** button (scheme `AdminApiToken`) accepts the token. Do this in a browser that is *not* logged in to WaterPulse — with a session cookie present, CSRF protection also requires an `X-CSRF-Token` header that Swagger doesn't send, so the call returns 403. Under docker-compose, use `http://localhost/api/...` (via Caddy) or your `BACKEND_HOST_PORT`.
 
 ### 6. Verify Everything
 
@@ -169,7 +169,7 @@ If you prefer Docker over local setup, you can skip steps 1-4 above:
 | **Alembic** | Database migration tool. Tracks schema changes (add/remove/rename columns) and applies them incrementally. Works with SQLAlchemy models. | `alembic/` directory |
 | **httpx** | Async HTTP client library (similar to `requests` but supports `async`/`await`). Used to call external APIs (ECCC, Alberta, Open-Meteo). | All provider files, `weather.py` |
 | **APScheduler** | Background task scheduler. Runs readings refresh every 10 minutes and historical sync annually on Jan 1st, without needing a separate process like Celery. | `scheduler.py` |
-| **python-jose** | JWT (JSON Web Token) library for creating and verifying authentication tokens. | `auth.py` |
+| **PyJWT** | JWT (JSON Web Token) library for creating and verifying authentication tokens. Replaced `python-jose`, which has an unfixed algorithm-confusion vulnerability (CVE-2024-33663). Tokens are HMAC-only (`ALGORITHM` must be HS256/384/512) and must carry `exp` and `sub`. | `auth.py` |
 | **bcrypt** | Password hashing library. Securely stores passwords so even if the database is compromised, passwords can't be read. | `auth.py` |
 | **slowapi** | Rate limiting for FastAPI endpoints. Per-IP limits using in-memory storage (swap to Redis for multi-replica AWS deployments). | `limiter.py`, route decorators |
 | **uvicorn** | ASGI server that actually runs the FastAPI application. It's what listens on port 8000 and passes HTTP requests to FastAPI. | Command line |
@@ -1153,11 +1153,16 @@ Per-IP rate limits are enforced using `slowapi` (`limiter.py`). In-memory storag
 |---|---|---|
 | `POST /api/auth/register` | 3/hour | Prevents account spam |
 | `POST /api/auth/login` | 10/minute | Prevents brute force |
-| `POST /api/admin/sync-*` | 5/minute | Expensive external API calls |
-| `POST /api/admin/refresh-readings` | 5/minute | Expensive external API calls |
-| All other endpoints | 60/minute | General abuse prevention |
+| `POST /api/admin/sync-*` | 5/minute | Expensive external API calls (admin-only) |
+| `POST /api/admin/refresh-readings` | 5/minute | Expensive external API calls (admin-only) |
+| `POST /api/readings/refresh` | 20/minute | Public, fans out to upstream providers |
+| `POST /api/collections/...` (create) | 30/hour | Prevents collection spam |
 
 When a limit is exceeded, the API returns `429 Too Many Requests`.
+
+Limits are keyed on the real client IP: uvicorn runs with `--proxy-headers` so `request.client.host` comes from the `X-Forwarded-For` that Caddy sets. Behind a Cloudflare tunnel every visitor arrives from the same tunnel peer, so the buckets are effectively shared until Caddy is configured to trust `CF-Connecting-IP`.
+
+> **Note:** `Limiter(default_limits=["60/minute"])` in `limiter.py` is **not** enforced on undecorated endpoints — slowapi applies default limits only when `SlowAPIMiddleware` is installed, and it isn't. Only the decorated endpoints above are limited.
 
 ---
 
@@ -1264,10 +1269,12 @@ The legacy `/api/favorites/*` endpoints were retired in migration `0002_collecti
 
 | Method | Path | Description | Frequency |
 |---|---|---|---|
-| POST | `/api/admin/sync-stations` | Run station sync across all providers | Twice per year or on demand |
-| POST | `/api/admin/sync-historical` | Run historical sync for all of Canada (can take hours; in K8s, use the CronJob instead) | Annually (Jan 1st auto) or on demand |
-| POST | `/api/admin/refresh-readings` | Manual readings refresh | On demand (auto every 10 min) |
-| GET | `/api/admin/status` | Station counts by province/source, reading counts, historical stats | Any time |
+| POST | `/api/admin/sync-stations` | Run station sync across all providers — **admin** | Twice per year or on demand |
+| POST | `/api/admin/sync-historical` | Run historical sync for all of Canada (can take hours; in K8s, use the CronJob instead) — **admin** | Annually (Jan 1st auto) or on demand |
+| POST | `/api/admin/refresh-readings` | Manual readings refresh — **admin** | On demand (auto every 10 min) |
+| GET | `/api/admin/status` | Station counts by province/source, reading counts, historical stats — public | Any time |
+
+**Admin** = a logged-in superuser session (with the usual `X-CSRF-Token` header) or `Authorization: Bearer <ADMIN_API_TOKEN>`. `POST /api/readings/refresh` stays public but needs `station_numbers` (max 50) or `province`; a no-filter, Canada-wide refresh is admin-only.
 
 ---
 
@@ -1814,7 +1821,7 @@ For future development, consider adding **unit tests** with `pytest` for:
 ### Debugging a Failed Reading Refresh
 
 1. Check the scheduler log: look for `"Scheduled refresh failed"` errors
-2. Run manually: `curl -X POST http://localhost:8000/api/admin/refresh-readings`
+2. Run manually: `curl -X POST -H "Authorization: Bearer $ADMIN_API_TOKEN" http://localhost:8000/api/admin/refresh-readings`
 3. Check the status: `curl http://localhost:8000/api/admin/status`
 4. Run the test script: `python test_orchestrators.py`
 5. Check the JSON output for error details and tracebacks
@@ -1846,7 +1853,7 @@ alembic upgrade head
 
 ### Dockerfile
 
-The backend Dockerfile (`waterpulse-backend/Dockerfile`) uses Python 3.12-slim (Debian-based, not Alpine) because the `asyncpg` and `psycopg2-binary` packages include C extensions that compile more reliably on Debian.
+The backend Dockerfile (`waterpulse-backend/Dockerfile`) uses `python:3.15.2-slim` (Debian-based, not Alpine). Every compiled dependency (`asyncpg`, `psycopg2-binary`, `pydantic-core`, `uvloop`, …) ships a prebuilt manylinux wheel for Python 3.15, so the image needs no compiler. The container runs as an unprivileged `app` user (uid 10001), not root.
 
 **Layer caching strategy:** `requirements.txt` is copied and installed before the source code. This means changing a Python file does NOT re-trigger `pip install` — only changes to `requirements.txt` invalidate the dependency layer, making rebuilds fast.
 
@@ -1888,15 +1895,40 @@ docker-compose exec backend alembic current
 
 ### Connecting to the Database
 
-Port 5432 is exposed in the development docker-compose for local tools (pgAdmin, DBeaver, etc.):
+The development docker-compose publishes PostgreSQL on **127.0.0.1 only** (never the LAN) for local tools (pgAdmin, DBeaver, etc.). The host port is `POSTGRES_HOST_PORT` from `.env` (default 5432; set e.g. 5434 if a native PostgreSQL install already holds 5432):
 
 ```bash
 # Open a psql shell inside the container
 docker-compose exec db psql -U waterpulse -d waterpulse
 
 # Or connect from your host machine
-psql -h localhost -p 5432 -U waterpulse -d waterpulse
+psql -h 127.0.0.1 -p 5432 -U waterpulse -d waterpulse   # use your POSTGRES_HOST_PORT
 ```
+
+### Upgrading PostgreSQL
+
+A **major** version upgrade (e.g. 16 → 19) cannot reuse the old data directory: the files are version-specific, and the official 18+ images also moved the data to a version subdirectory (`PGDATA=/var/lib/postgresql/<major>/docker`) with the volume mounted at `/var/lib/postgresql`. The safe path is dump → fresh volume → restore. Dump *inside* the container and copy the file out — piping `pg_dump` through a shell redirect (`>`) can corrupt the binary dump (TTY allocation, PowerShell re-encoding).
+
+```bash
+# 1. On the OLD version: dump to a file inside the container, copy it out, check it
+docker compose up -d db
+docker compose exec -T db pg_dump -U waterpulse -Fc -f /tmp/old.dump waterpulse
+docker compose cp db:/tmp/old.dump backups/old.dump          # backups/ is gitignored
+docker compose exec -T db pg_restore -l /tmp/old.dump | grep -c "TABLE DATA"
+#    (record per-table row counts too, to compare after the restore)
+
+# 2. Point docker-compose.yml at the new image AND a NEW named volume mounted at
+#    /var/lib/postgresql (keep the old volume as a rollback point), then:
+docker compose stop db && docker compose rm -f db
+docker compose up -d db
+
+# 3. Restore from a file path (not stdin), compare row counts, start the stack
+docker compose cp backups/old.dump db:/tmp/old.dump
+docker compose exec -T db pg_restore --no-owner --exit-on-error -U waterpulse -d waterpulse /tmp/old.dump
+docker compose up -d                      # alembic upgrade head is a no-op
+```
+
+> On Git Bash for Windows, prefix the `exec`/`cp` commands with `MSYS_NO_PATHCONV=1` so `/tmp/...` is not rewritten to a Windows path. `POSTGRES_PASSWORD` is only read when a volume is first initialised — a fresh volume is the moment to rotate it. The dump contains user emails and password hashes: keep it out of git and delete it once you no longer need the rollback.
 
 ### .dockerignore
 

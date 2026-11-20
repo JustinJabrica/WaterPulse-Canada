@@ -1,18 +1,27 @@
 from datetime import datetime
 from typing import List
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from starlette.requests import Request
 
+from app.auth import get_current_user, is_admin_caller
 from app.database import get_db
+from app.limiter import limiter
+from app.models.user import User
 from app.models.station import Station
 from app.models.reading import CurrentReading
 from app.schemas import StationWithReading
 from app.services.readings_refresh import refresh_current_readings
 
 router = APIRouter(prefix="/api/readings", tags=["readings"])
+
+# Upper bound on an explicit station list for one public refresh call. The
+# UI refreshes one station (StationDetail) or one province (dashboard); a
+# larger ad-hoc list is almost certainly abuse of the upstream providers.
+MAX_REFRESH_STATIONS = 50
 
 
 # ── Helper ──────────────────────────────────────────────────────────
@@ -57,7 +66,9 @@ def _build_station_readings(stations: list) -> list[StationWithReading]:
 
 
 @router.post("/refresh")
+@limiter.limit("20/minute")
 async def trigger_refresh(
+    request: Request,
     station_numbers: List[str] | None = Query(
         None, description="Specific station numbers to refresh (e.g. 05AA004)"
     ),
@@ -65,18 +76,32 @@ async def trigger_refresh(
         None, description="Refresh all stations in a province (e.g. AB, BC, ON)"
     ),
     db: AsyncSession = Depends(get_db),
+    user: User | None = Depends(get_current_user),
 ):
     """
     Trigger an on-demand readings refresh.
 
     The frontend calls this to fetch fresh data from external APIs,
-    compute ratings and weather, and upsert into the database.
+    compute ratings and weather, and upsert into the database. Every call
+    fans out to upstream providers, so it is rate-limited per client IP.
 
-    Filters (pick one or neither):
-        - station_numbers: refresh only these specific stations
+    Filters (pick one; omitting both is admin-only):
+        - station_numbers: refresh only these stations (max 50 per call)
         - province: refresh all stations in one province
-        - neither: refresh all stations across Canada
+        - neither: refresh all stations across Canada — superuser session or
+          ADMIN_API_TOKEN only (or use POST /api/admin/refresh-readings)
     """
+    if station_numbers and len(station_numbers) > MAX_REFRESH_STATIONS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"At most {MAX_REFRESH_STATIONS} station_numbers per refresh",
+        )
+    if not station_numbers and not province and not is_admin_caller(request, user):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Specify station_numbers or province. A full Canada-wide "
+            "refresh requires an admin (POST /api/admin/refresh-readings).",
+        )
     summary = await refresh_current_readings(
         db,
         station_numbers=station_numbers,

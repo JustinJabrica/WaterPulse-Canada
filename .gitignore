@@ -3,6 +3,8 @@
 .env.*
 !.env.example
 k8s/secrets.yaml
+# Database dumps (contain user emails + password hashes) — never commit
+backups/
 
 # ── Hidden folders ────────────────────────────
 .hidden/
