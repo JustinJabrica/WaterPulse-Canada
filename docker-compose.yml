@@ -58,7 +58,10 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}   # From .env
       POSTGRES_DB: waterpulse
     ports:
-      - "5432:5432"     # Exposed for local DB tools; remove in production
+      # Loopback-only so the database is never reachable from the LAN.
+      # POSTGRES_HOST_PORT lets you move it off 5432 when a local Postgres
+      # install already holds that port (set it in .env).
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data   # Persist data across restarts
     healthcheck:
@@ -92,7 +95,9 @@ services:
       context: ./waterpulse-backend
       dockerfile: Dockerfile
     ports:
-      - "8000:8000"     # Direct access; also proxied via Caddy at /api
+      # Loopback-only direct access for local tooling; browsers go through
+      # Caddy at /api. BACKEND_HOST_PORT moves it off 8000 when needed.
+      - "127.0.0.1:${BACKEND_HOST_PORT:-8000}:8000"
     env_file:
       - .env     # Loads SECRET_KEY, API URLs, POSTGRES_PASSWORD, etc.
     environment:
