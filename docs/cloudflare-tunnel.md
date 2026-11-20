@@ -122,9 +122,43 @@ A quick check that everything is in order:
 "/c/Program Files (x86)/cloudflared/cloudflared.exe" --version
 ```
 
-You should see a line like `cloudflared version 2025.8.1`. If you see an
+You should see a line like `cloudflared version 2026.11.1`. If you see an
 error instead, the installer did not finish, or you need a fresh
-terminal.
+terminal. Keep it current — `cloudflared` is the program holding a door
+open to the internet, so it is worth taking its security fixes:
+
+```bash
+winget upgrade --id Cloudflare.cloudflared
+```
+
+---
+
+## Before you open a tunnel: a short safety checklist
+
+A tunnel puts your laptop's copy of WaterPulse on the public internet,
+reachable by anyone who learns (or guesses) the address. Three settings
+in the root `.env` matter the moment that happens:
+
+1. **`SECRET_KEY` must be your own random value.** It signs every login
+   token. The value in `.env.example` is public, and anyone who knows it
+   can mint a token for any account — including admins. The backend now
+   refuses to start with that placeholder, but double-check:
+   `python -c "import secrets; print(secrets.token_urlsafe(64))"`.
+2. **`COOKIE_SECURE=True`.** Visitors reach the site over `https://`
+   (Cloudflare terminates TLS), so the login cookie can and should carry
+   the `Secure` flag, even though Caddy behind the tunnel speaks plain
+   HTTP. Recreate the backend after changing it:
+   `docker compose up -d backend`. Set it back to `False` for plain
+   `http://localhost` use, or logins will silently fail.
+3. **`ADMIN_API_TOKEN` stays private.** The `POST /api/admin/*` sync
+   endpoints accept it as a bearer token; never paste it into a URL or a
+   chat.
+
+One limitation to know about: every visitor arrives at Caddy from the
+same place (the tunnel), so the per-IP rate limits (login attempts,
+registrations, refreshes) are shared by everyone using the tunnel at
+once. That is fine for showing the app to a few people, but not for a
+public launch — see "When you outgrow a quick tunnel" below.
 
 ---
 

@@ -25,7 +25,7 @@ Covers monitoring stations across all 13 provinces and territories, with water l
 ## Tech Stack
 
 - **Frontend** — Next.js (App Router), JavaScript, Tailwind CSS, MapLibre GL JS
-- **Backend** — FastAPI, Python 3.12, async SQLAlchemy, PostgreSQL
+- **Backend** — FastAPI, Python 3.15, async SQLAlchemy, PostgreSQL 19
 - **Basemap** — Self-hosted PMTiles (Protomaps Canada extract) served by Caddy, with a CartoDB Voyager fallback when the local file is absent
 - **Infrastructure** — Docker Compose (local dev), Kubernetes-ready (kind or cloud)
 
@@ -53,14 +53,15 @@ Covers monitoring stations across all 13 provinces and territories, with water l
 ```bash
 # 1. Clone and configure
 cp .env.example .env
-# Edit .env — set POSTGRES_PASSWORD and SECRET_KEY
+# Edit .env — set POSTGRES_PASSWORD, SECRET_KEY and ADMIN_API_TOKEN
+# (the backend refuses to start with the placeholder SECRET_KEY)
 
 # 2. Start all services
 docker-compose up --build
 
-# 3. Populate the database (one-time setup)
-curl -X POST http://localhost:8000/api/admin/sync-stations
-curl -X POST http://localhost:8000/api/admin/refresh-readings
+# 3. Populate the database (one-time setup; admin endpoints need the token)
+curl -X POST -H "Authorization: Bearer $ADMIN_API_TOKEN" http://localhost/api/admin/sync-stations
+curl -X POST -H "Authorization: Bearer $ADMIN_API_TOKEN" http://localhost/api/admin/refresh-readings
 
 # 4. Open the app
 # http://localhost

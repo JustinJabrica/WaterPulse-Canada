@@ -1,4 +1,5 @@
 import logging
+import secrets
 from contextlib import asynccontextmanager
 from datetime import datetime
 
@@ -38,23 +39,32 @@ class CSRFMiddleware(BaseHTTPMiddleware):
     X-CSRF-Token header against the csrf_token cookie. Only enforced
     when an access_token cookie is present (i.e. for authenticated users).
     Login and register are exempt since they create the cookies.
+
+    /api/admin/* is deliberately NOT exempt: those endpoints now require an
+    admin, and a superuser's browser session must prove same-origin like any
+    other mutating call. Script callers authenticate with the ADMIN_API_TOKEN
+    bearer header and send no cookie, so this check doesn't apply to them.
     """
 
     EXEMPT_PATHS = {"/api/auth/login", "/api/auth/register", "/api/readings/refresh"}
-    EXEMPT_PREFIXES = ("/api/admin/",)
     PROTECTED_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
     async def dispatch(self, request: Request, call_next):
         if (
             request.method in self.PROTECTED_METHODS
             and request.url.path not in self.EXEMPT_PATHS
-            and not any(request.url.path.startswith(p) for p in self.EXEMPT_PREFIXES)
             and request.cookies.get("access_token")
         ):
             csrf_cookie = request.cookies.get("csrf_token")
             csrf_header = request.headers.get("x-csrf-token")
 
-            if not csrf_cookie or not csrf_header or csrf_cookie != csrf_header:
+            if (
+                not csrf_cookie
+                or not csrf_header
+                or not secrets.compare_digest(
+                    csrf_cookie.encode("utf-8"), csrf_header.encode("utf-8")
+                )
+            ):
                 return JSONResponse(
                     status_code=403,
                     content={"detail": "CSRF validation failed"},

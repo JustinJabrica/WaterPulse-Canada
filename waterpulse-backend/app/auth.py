@@ -114,3 +114,52 @@ async def require_superuser(
             detail="Superuser privileges required",
         )
     return user
+
+
+def _has_valid_admin_token(request: Request) -> bool:
+    """True when the request carries `Authorization: Bearer <ADMIN_API_TOKEN>`.
+
+    Always False when ADMIN_API_TOKEN is unset, so token auth is opt-in.
+    Uses a constant-time comparison so the token can't be guessed by timing.
+    """
+    expected = settings.ADMIN_API_TOKEN
+    if not expected:
+        return False
+    scheme, _, presented = request.headers.get("authorization", "").partition(" ")
+    if scheme.lower() != "bearer" or not presented:
+        return False
+    return secrets.compare_digest(presented.encode("utf-8"), expected.encode("utf-8"))
+
+
+async def require_admin(
+    request: Request,
+    user: User | None = Depends(get_current_user),
+) -> User | None:
+    """
+    Dependency for operational endpoints (data syncs, full refreshes).
+
+    Accepts either a logged-in superuser (cookie session; CSRFMiddleware
+    still enforces the X-CSRF-Token header for it) or a script/cron caller
+    presenting the ADMIN_API_TOKEN bearer token. Returns the User for
+    cookie callers and None for token callers.
+    """
+    if _has_valid_admin_token(request):
+        return None
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    if not user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Superuser privileges required",
+        )
+    return user
+
+
+def is_admin_caller(request: Request, user: User | None) -> bool:
+    """Non-raising variant of require_admin, for endpoints open to everyone
+    that unlock extra scope (e.g. a full refresh) only for admins."""
+    return _has_valid_admin_token(request) or bool(user and user.is_admin)
