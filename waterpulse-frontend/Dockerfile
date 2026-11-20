@@ -37,7 +37,7 @@
 #   - Installs exact versions from package-lock.json (reproducible builds)
 #   - Is faster in CI/Docker (skips the dependency resolution step)
 #   - Fails if package-lock.json is out of sync with package.json
-FROM node:22-alpine AS deps
+FROM node:26.13.1-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
@@ -45,7 +45,7 @@ RUN npm ci
 # ── Stage 2: Build the Next.js application ──────────────────────────────────
 # Copies node_modules from the deps stage, then copies all source files and
 # runs the production build. The build output goes to .next/standalone/.
-FROM node:22-alpine AS builder
+FROM node:26.13.1-alpine AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
@@ -67,18 +67,28 @@ RUN npm run build
 #   - .next/standalone/  — self-contained Node.js server (server.js + minimal deps)
 #   - .next/static/      — pre-built CSS, JS, and other static assets
 #   - public/            — favicon, SVGs, and other public files
-FROM node:22-alpine AS runner
+FROM node:26.13.1-alpine AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+# Next.js standalone binds to $HOSTNAME. Docker sets HOSTNAME to the
+# container ID, which made the server listen only on the container's own
+# interface — so the localhost wget healthcheck below always failed.
+# 0.0.0.0 makes it listen on every interface (Caddy + healthcheck).
+ENV HOSTNAME=0.0.0.0
 
+# Files are owned by the unprivileged "node" user (uid 1000) that ships with
+# the official image, and the server runs as that user rather than root.
 # Copy the standalone server output from the builder stage.
 # The standalone directory contains server.js and a pruned node_modules.
-COPY --from=builder /app/.next/standalone ./
+COPY --from=builder --chown=node:node /app/.next/standalone ./
 # Static assets are not included in standalone and must be copied separately.
-COPY --from=builder /app/.next/static ./.next/static
+COPY --from=builder --chown=node:node /app/.next/static ./.next/static
 # Public directory contains static files served at the root (favicon, etc.).
-COPY --from=builder /app/public ./public
+COPY --from=builder --chown=node:node /app/public ./public
+
+USER node
 
 EXPOSE 3000
 

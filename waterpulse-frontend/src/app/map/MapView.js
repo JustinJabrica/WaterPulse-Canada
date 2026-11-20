@@ -1,6 +1,7 @@
 import { useRef, useCallback, useMemo, useState, useEffect } from "react";
 import Map, { Source, Layer, Popup } from "react-map-gl/maplibre";
-import maplibregl from "maplibre-gl";
+// maplibre-gl v6 is ESM-only with no default export — use the namespace.
+import * as maplibregl from "maplibre-gl";
 import { Protocol } from "pmtiles";
 import { layers as pmLayers, namedFlavor } from "@protomaps/basemaps";
 import useMapStore from "@/stores/mapStore";
@@ -671,6 +672,9 @@ export default function MapView() {
         onMouseLeave={handleMouseLeave}
         interactiveLayerIds={["clusters", "station-markers", "province-fills"]}
         mapStyle={MAP_STYLE}
+        // Hand react-map-gl the same maplibre module instance the pmtiles
+        // protocol was registered on, instead of letting it import its own.
+        mapLib={maplibregl}
         maxZoom={15}
         style={{ width: "100%", height: "100%" }}
       >
