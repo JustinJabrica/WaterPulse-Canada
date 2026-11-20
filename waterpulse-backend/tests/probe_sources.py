@@ -117,7 +117,7 @@ def _count(items, key) -> dict:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="DS-STD-2026.1 sanctioned source probes")
-    ap.add_argument("--category", help="only this category (historical, current, stations, weather, aqi, watertemp, waterquality, precip, snow, ice, drainage, groundwater, flood, tides, wildfire)")
+    ap.add_argument("--category", help="only this category (historical, current, stations, weather, aqi, watertemp, waterquality, precip, snow, ice, drainage, groundwater, flood, tides, wildfire, municipal)")
     ap.add_argument("--source", help="only this source_id (e.g. SRC-HYDAT)")
     ap.add_argument("--only", help="comma-separated test_ids to run")
     ap.add_argument("--include-residual", action="store_true", help="also run scrape/residual probes ONCE (normally harness-only)")

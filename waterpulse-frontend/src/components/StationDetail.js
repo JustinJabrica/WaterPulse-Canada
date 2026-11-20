@@ -240,7 +240,16 @@ export default function StationDetail({ stationNumber, onClose, refreshButton = 
             {typeLabel && <> &middot; {typeLabel}</>}
             {provinceName && <> &middot; {provinceName}</>}
             {reading?.data_source && (
-              <> &middot; Source: {DATA_SOURCES[reading.data_source] || reading.data_source}</>
+              <>
+                {" "}&middot; Source:{" "}
+                <a
+                  href="/methodology#sources"
+                  className="text-[#1e6ba8] hover:underline"
+                  title="How WaterPulse sources, cites, and rates this data"
+                >
+                  {DATA_SOURCES[reading.data_source] || reading.data_source}
+                </a>
+              </>
             )}
           </p>
         </div>
@@ -295,9 +304,17 @@ export default function StationDetail({ stationNumber, onClose, refreshButton = 
 
           {/* ── Readings + Ratings card ──── */}
           <div className="rounded-xl border border-slate-200 bg-white p-6">
-            <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wider mb-4">
-              Current Readings
-            </h2>
+            <div className="flex items-center justify-between mb-4 gap-2">
+              <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wider">
+                Current Readings
+              </h2>
+              <a
+                href="/methodology#ratings"
+                className="text-xs text-[#1e6ba8] hover:underline whitespace-nowrap"
+              >
+                How is this calculated?
+              </a>
+            </div>
 
             {/* Stat row */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-1 mb-6 bg-slate-50 rounded-lg">
@@ -310,6 +327,24 @@ export default function StationDetail({ stationNumber, onClose, refreshButton = 
                 <StatBlock label="Capacity" value={reading.pct_full} unit="%" decimals={1} />
               )}
             </div>
+
+            {/* Data-quality / provenance */}
+            {reading.level_symbol || reading.discharge_symbol ? (
+              <p className="text-xs text-amber-700 mb-3">
+                Quality flags:{" "}
+                {[reading.level_symbol, reading.discharge_symbol].filter(Boolean).join("; ")}{" "}
+                <a href="/methodology#reliability" className="text-[#1e6ba8] hover:underline">
+                  (what does this mean?)
+                </a>
+              </p>
+            ) : (
+              <p className="text-xs text-slate-400 mb-3">
+                Real-time readings are provisional and subject to revision.{" "}
+                <a href="/methodology#reliability" className="text-[#1e6ba8] hover:underline">
+                  How reliable is this?
+                </a>
+              </p>
+            )}
 
             {/* Percentile bars */}
             <PercentileBar
